@@ -16,6 +16,7 @@
 #   ai-orch version | -v           # installed version
 #   ai-orch check [-Live] [-Native]
 #   ai-orch status [-Last 20]
+#   ai-orch stats [-Days 30] [-All]
 #   ai-orch set-token [-Token hapy_...]       # interactive/secure by default
 #   ai-orch set-gateway -BaseUrl https://...  # not a secret, agents may run
 #   ai-orch update [-Apply]
@@ -42,7 +43,8 @@ function Show-OrchHelp {
     'subcommands:'
     '  version | -v             installed version'
     '  check [-Live|-Native]    health check'
-    '  status [-Last N]         usage summary'
+    '  status [-Last N]         recent orchestrator worker calls'
+    '  stats [-Days N] [-All]   model usage: hapy gateway vs Anthropic, by source/model'
     '  set-token                gateway token, interactive/secure'
     '                           options: -Token hapy_... (scripts/CI only)'
     '  set-gateway -BaseUrl U   gateway address, not a secret'
@@ -57,7 +59,8 @@ function Show-OrchHelp {
 }
 
 $scripts = @{
-    'check' = 'check.ps1'; 'status' = 'status.ps1'; 'set-token' = 'set-token.ps1'
+    'check' = 'check.ps1'; 'status' = 'status.ps1'; 'stats' = 'stats.ps1'
+    'set-token' = 'set-token.ps1'
     'set-gateway' = 'set-gateway.ps1'; 'update' = 'update.ps1'; 'ask' = 'ask.ps1'
     'review' = 'review.ps1'; 'task' = 'task.ps1'; 'mode' = 'mode.ps1'
 }

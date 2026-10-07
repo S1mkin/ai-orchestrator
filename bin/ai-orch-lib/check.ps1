@@ -27,7 +27,7 @@ $lib = $PSScriptRoot
 $bin = Split-Path $lib -Parent
 if (Test-Path (Join-Path $bin 'ai-orch.ps1')) { Ok 'ai-orch.ps1' } else { Bad "missing: $(Join-Path $bin 'ai-orch.ps1')" }
 foreach ($s in @('common.ps1', 'ask.ps1', 'review.ps1', 'task.ps1', 'mode.ps1', 'check.ps1',
-                 'status.ps1', 'set-token.ps1', 'set-gateway.ps1', 'update.ps1')) {
+                 'status.ps1', 'stats.ps1', 'set-token.ps1', 'set-gateway.ps1', 'update.ps1')) {
     if (Test-Path (Join-Path $lib $s)) { Ok "ai-orch-lib/$s" } else { Bad "missing: $(Join-Path $lib $s)" }
 }
 $legacy = @(Get-ChildItem $bin -File -ErrorAction SilentlyContinue |

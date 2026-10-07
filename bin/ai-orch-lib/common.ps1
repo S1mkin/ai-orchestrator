@@ -6,7 +6,7 @@
 
 # orchestrator version (bump on every released change; ai-orch update compares
 # this against the same line on GitHub)
-$script:OrchVersion = '1.5.0'
+$script:OrchVersion = '1.6.0'
 $script:OrchRepoRaw = 'https://raw.githubusercontent.com/S1mkin/ai-orchestrator/main/bin/ai-orch-lib/common.ps1'
 
 # pre-1.5 standalone commands: install.ps1 deletes them from ~/.claude/bin,
@@ -207,7 +207,11 @@ function Send-HapyMessage {
             'content_block_delta' { if ($evt.delta.text) { [void]$sb.Append($evt.delta.text) } }
             'message_delta'      {
                 if ($evt.delta.stop_reason) { $stop = $evt.delta.stop_reason }
-                if ($evt.usage) { $outTok = $evt.usage.output_tokens }
+                if ($evt.usage) {
+                    $outTok = $evt.usage.output_tokens
+                    # some gateways report input only here, message_start says 0
+                    if ($evt.usage.input_tokens -gt 0) { $inTok = $evt.usage.input_tokens }
+                }
             }
         }
     }
