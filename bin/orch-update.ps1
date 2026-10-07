@@ -27,8 +27,8 @@ else {
 
 if (-not $Apply) {
     if ($updateAvailable) {
-        if ($clone -and (Test-Path $clone)) { 'to apply: orch-update -Apply' }
-        else { 'to apply: run install.ps1 from your clone again (it records the path), then orch-update -Apply' }
+        if ($clone -and (Test-Path $clone)) { 'to apply: ai-orch update -Apply (or orch-update -Apply)' }
+        else { 'to apply: run install.ps1 from your clone again (it records the path), then ai-orch update -Apply' }
     }
     return
 }
@@ -51,4 +51,4 @@ if ($env:OS -ne 'Windows_NT') { $ps = 'pwsh' }
 # as-is by the installer, so no prompt is needed
 & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $clone 'install.ps1') -NoToken
 if ($LASTEXITCODE -ne 0) { Write-Error 'install.ps1 failed - see output above' }
-'updated. verify: orch-check'
+'updated. verify: ai-orch check'

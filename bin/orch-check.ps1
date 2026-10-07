@@ -21,7 +21,7 @@ function Mask-Token([string]$t) {
 
 # ---------------------------------------------------------------- scripts + PATH
 Write-Host 'scripts'
-Info "version: $script:OrchVersion (check for updates: orch-update)"
+Info "version: $script:OrchVersion (check for updates: ai-orch update)"
 $bin = $PSScriptRoot
 foreach ($s in @('ai-orch.ps1', 'hapy-lib.ps1', 'hapy-ask.ps1', 'hapy-review.ps1', 'glm-task.ps1',
                  'claude-mode.ps1', 'orch-token.ps1', 'orch-set-token.ps1', 'orch-set-gateway.ps1',
@@ -55,7 +55,7 @@ foreach ($f in @($hapyF, $glmF)) {
     $j = Get-Content $f -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $j.env.ANTHROPIC_AUTH_TOKEN) { Info "$f has no gateway env"; continue }
     if ($j.env.ANTHROPIC_AUTH_TOKEN -match '^__' -or $j.env.ANTHROPIC_BASE_URL -match '^__') {
-        Bad "$f still has __HAPY_* placeholders - run install.ps1 or orch-set-token / orch-set-gateway"
+        Bad "$f still has __HAPY_* placeholders - run install.ps1 or ai-orch set-token / ai-orch set-gateway"
     }
     else {
         Ok ($f + ': token ' + (Mask-Token $j.env.ANTHROPIC_AUTH_TOKEN) + ', base ' + $j.env.ANTHROPIC_BASE_URL)
@@ -65,7 +65,7 @@ foreach ($f in @($hapyF, $glmF)) {
 $liveF = Join-Path $HOME '.claude/settings.json'
 if (Test-Path $liveF) {
     $raw = Get-Content $liveF -Raw -Encoding UTF8
-    if ($raw -match 'ANTHROPIC_BASE_URL') { Info 'main session: gateway mode (claude-mode claude switches back)' }
+    if ($raw -match 'ANTHROPIC_BASE_URL') { Info 'main session: gateway mode (ai-orch mode claude switches back)' }
     else { Info 'main session: built-in Claude mode' }
 }
 else { Info 'main session: no live settings.json yet' }
@@ -84,7 +84,7 @@ catch { Bad 'claude CLI not found (needed by glm-task and the native backend)' }
 # ---------------------------------------------------------------- usage log
 if (Test-Path $script:AIUsageLogPath) {
     $n = @(Get-Content $script:AIUsageLogPath).Count
-    Ok "usage log: $script:AIUsageLogPath ($n lines, summary: orch-status)"
+    Ok "usage log: $script:AIUsageLogPath ($n lines, summary: ai-orch status)"
 }
 else { Info 'usage log: empty so far (appears after the first worker call)' }
 

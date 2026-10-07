@@ -52,5 +52,5 @@ foreach ($f in $files) {
 $leftUrl = @($files | Where-Object { (Test-Path $_) -and ((Get-Content $_ -Raw -Encoding UTF8) -match '__HAPY_BASE_URL__') })
 if ($leftUrl) { Write-Warning "URL placeholders remain in: $($leftUrl -join ', ') - orch-check will flag them" }
 $leftTok = @($files | Where-Object { (Test-Path $_) -and ((Get-Content $_ -Raw -Encoding UTF8) -match '__HAPY_TOKEN__') })
-if ($leftTok) { 'hint: token placeholder remains - orch-set-token (run it in your own terminal)' }
-'verify: orch-check -Live'
+if ($leftTok) { 'hint: token placeholder remains - ai-orch set-token (run it in your own terminal)' }
+'verify: ai-orch check -Live'

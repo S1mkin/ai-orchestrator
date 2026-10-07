@@ -14,7 +14,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $home2 = if ($HomeDir) { $HomeDir } else { $HOME }
 
-'deprecated: use orch-set-token (token) and orch-set-gateway (address)'
+'deprecated: use ai-orch set-token (token) and ai-orch set-gateway (address); direct: orch-set-token / orch-set-gateway'
 
 $splat = @{ HomeDir = $home2 }
 if ($Token) { $splat.Token = $Token }

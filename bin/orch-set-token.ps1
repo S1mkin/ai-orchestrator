@@ -38,7 +38,7 @@ if (-not $Token) {
             $Token = Read-Host 'token (hapy_...)'
         }
     }
-    catch { Write-Error 'token input failed (no interactive terminal?) - pass -Token <value> or run orch-set-token in your own terminal' }
+    catch { Write-Error 'token input failed (no interactive terminal?) - pass -Token <value> or run ai-orch set-token in your own terminal' }
 }
 if ([string]::IsNullOrWhiteSpace($Token)) { Write-Error 'no token entered - nothing changed' }
 
@@ -71,5 +71,5 @@ $mask = $Token.Substring(0, 4) + ('*' * [Math]::Min(24, $Token.Length - 4))
 $leftTok = @($files | Where-Object { (Test-Path $_) -and ((Get-Content $_ -Raw -Encoding UTF8) -match '__HAPY_TOKEN__') })
 if ($leftTok) { Write-Warning "token placeholders remain in: $($leftTok -join ', ') - orch-check will flag them" }
 $leftUrl = @($files | Where-Object { (Test-Path $_) -and ((Get-Content $_ -Raw -Encoding UTF8) -match '__HAPY_BASE_URL__') })
-if ($leftUrl) { 'hint: gateway URL placeholders remain - orch-set-gateway sets the address' }
-'verify: orch-check -Live'
+if ($leftUrl) { 'hint: gateway URL placeholders remain - ai-orch set-gateway sets the address' }
+'verify: ai-orch check -Live'
