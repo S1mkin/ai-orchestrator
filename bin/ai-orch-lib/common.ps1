@@ -6,7 +6,7 @@
 
 # orchestrator version (bump on every released change; ai-orch update compares
 # this against the same line on GitHub)
-$script:OrchVersion = '1.7.1'
+$script:OrchVersion = '1.7.2'
 $script:OrchRepoRaw = 'https://raw.githubusercontent.com/S1mkin/ai-orchestrator/main/bin/ai-orch-lib/common.ps1'
 
 # pre-1.5 standalone commands: install.ps1 deletes them from ~/.claude/bin,
