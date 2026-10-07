@@ -21,8 +21,18 @@ if (-not $remote) {
 }
 else {
     "remote version: $remote"
-    if ($remote -eq $script:OrchVersion) { Write-Host 'up to date' -ForegroundColor Green }
-    else { Write-Host 'update available' -ForegroundColor Yellow; $updateAvailable = $true }
+    # compare as versions, not strings: a local build ahead of GitHub (just
+    # pushed - raw.githubusercontent caches ~5 min - or unpushed) is not an
+    # update, and -Apply must not pull and reinstall for it
+    $lv = $null; $rv = $null
+    if (-not [version]::TryParse($script:OrchVersion, [ref]$lv) -or -not [version]::TryParse($remote, [ref]$rv)) {
+        Write-Warning "cannot compare versions '$script:OrchVersion' and '$remote' - no changes made"
+        $remote = ''
+        if ($Apply) { return }
+    }
+    elseif ($rv -gt $lv) { Write-Host 'update available' -ForegroundColor Yellow; $updateAvailable = $true }
+    elseif ($rv -lt $lv) { Write-Host 'local version is newer than GitHub (not pushed yet, or GitHub cache is a few minutes behind) - nothing to update' -ForegroundColor Green }
+    else { Write-Host 'up to date' -ForegroundColor Green }
 }
 
 if (-not $Apply) {
@@ -35,7 +45,7 @@ if (-not $Apply) {
 
 # ---------------------------------------------------------------- -Apply
 if ($remote -and (-not $updateAvailable)) {
-    'nothing to apply - already up to date'
+    'nothing to apply'
     return
 }
 if (-not $clone -or -not (Test-Path (Join-Path $clone '.git'))) {
