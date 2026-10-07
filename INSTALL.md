@@ -79,8 +79,13 @@ pwsh -NoProfile -File install.ps1 -BaseUrl <адрес> -Token <токен>
 
 ## 4. Расскажите пользователю, что дальше
 
-- Команды появятся в **новом** терминале (PATH подхватывается только новыми
-  сессиями): `hapy-ask`, `hapy-review`, `glm-task`, `claude-mode`.
+- Windows: команды появятся в **новом** терминале (PATH подхватывается только
+  новыми сессиями): `hapy-ask`, `hapy-review`, `glm-task`, `claude-mode`.
+- macOS/Linux: установщик PATH не меняет — добавьте в `~/.zshrc` (или
+  `~/.bashrc`) строку `export PATH="$PATH:$HOME/.claude/bin"` и при желании
+  алиасы вида `alias hapy-ask='pwsh $HOME/.claude/bin/hapy-ask.ps1'`
+  (согласуйте с пользователем; без алиасов из zsh/bash скрипт запускается
+  только так: `pwsh ~/.claude/bin/hapy-ask.ps1 …`).
 - Основная сессия Claude Code не переключалась: чтобы вести и её через шлюз —
   `claude-mode hapy` + Reload Window (необязательно).
 - Ничего не коммитьте в клон репозитория.
