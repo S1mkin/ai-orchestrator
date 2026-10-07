@@ -1,0 +1,6 @@
+# runtime artifacts never belong in the repo
+snapshots/
+patches/
+.credentials.json
+*.patch
+*.local.json

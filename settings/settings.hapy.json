@@ -1,0 +1,50 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://hapy.hplatform.ai",
+    "ANTHROPIC_AUTH_TOKEN": "__HAPY_TOKEN__",
+    "ANTHROPIC_MODEL": "glm-5.3",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5.3"
+  },
+  "modelPicker": {
+    "replaceBuiltInOptions": true,
+    "options": [
+      { "model": "glm-5.3", "label": "GLM 5.3", "description": "С‚РµРєСѓС‰Р°СЏ РѕСЃРЅРѕРІРЅР°СЏ РјРѕРґРµР»СЊ" },
+      { "model": "glm-5.3-flash", "label": "GLM 5.3 Flash", "description": "Р±С‹СЃС‚СЂР°СЏ Рё РґРµС€С‘РІР°СЏ" },
+      { "model": "glm-5.2", "label": "GLM 5.2" },
+      { "model": "glm-5.1", "label": "GLM 5.1" },
+      { "model": "glm-4.6", "label": "GLM 4.6" },
+      { "model": "glm-4.5-air", "label": "GLM 4.5 Air" },
+      { "model": "grok-4.7", "label": "Grok 4.7" },
+      { "model": "grok-4.6", "label": "Grok 4.6" },
+      { "model": "grok-4.5", "label": "Grok 4.5" },
+      { "model": "MiniMax-M3", "label": "MiniMax M3" },
+      { "model": "MiniMax-M2.7", "label": "MiniMax M2.7" }
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "(New-Object System.Media.SoundPlayer 'C:\\Windows\\Media\\Windows Notify System Generic.wav').PlaySync()",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "(New-Object System.Media.SoundPlayer 'C:\\Windows\\Media\\Windows Exclamation.wav').PlaySync()",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

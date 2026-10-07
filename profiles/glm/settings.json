@@ -1,0 +1,47 @@
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://hapy.hplatform.ai",
+    "ANTHROPIC_AUTH_TOKEN": "__HAPY_TOKEN__",
+    "ANTHROPIC_MODEL": "glm-5.3"
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(find *)",
+      "Bash(wc *)",
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git diff*)",
+      "Bash(git grep*)"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(git commit*)",
+      "Bash(git checkout*)",
+      "Bash(git reset*)",
+      "Bash(git rebase*)",
+      "Bash(git merge*)",
+      "Bash(git clean*)",
+      "Bash(rm *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(rsync *)",
+      "Bash(docker *)",
+      "Edit(**/CLAUDE.md)",
+      "Write(**/CLAUDE.md)",
+      "Edit(**/AGENTS.md)",
+      "Write(**/AGENTS.md)"
+    ]
+  }
+}
