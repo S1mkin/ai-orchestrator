@@ -6,7 +6,7 @@
 
 # orchestrator version (bump on every released change; ai-orch update compares
 # this against the same line on GitHub)
-$script:OrchVersion = '1.7.0'
+$script:OrchVersion = '1.7.1'
 $script:OrchRepoRaw = 'https://raw.githubusercontent.com/S1mkin/ai-orchestrator/main/bin/ai-orch-lib/common.ps1'
 
 # pre-1.5 standalone commands: install.ps1 deletes them from ~/.claude/bin,
@@ -119,6 +119,40 @@ function Get-AIRunId {
     # unique per call: timestamp for humans + PID + random suffix, so parallel
     # calls (agents fire several at once) never share temp files or snapshots
     return '{0}-{1}-{2}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $PID, ([guid]::NewGuid().ToString('N').Substring(0, 6))
+}
+
+# ------------------------------------------------- project mode overrides
+# 'ai-orch mode hapy -Project' writes the gateway env (token included) into
+# <git-root>/.claude/settings.local.json. Those files live outside ~/.claude,
+# so their paths are registered here and set-token / set-gateway rotate the
+# values in every registered file - a stale token in an override would 401.
+$script:AIProjectOverridesFile = Join-Path $HOME '.claude/orch-project-overrides.txt'
+
+function Get-AIProjectOverrides {
+    # registered override paths that still exist; dead lines are pruned
+    if (-not (Test-Path $script:AIProjectOverridesFile)) { return @() }
+    $lines = @((Get-Content $script:AIProjectOverridesFile -Encoding UTF8) |
+        ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $alive = @($lines | Where-Object { Test-Path $_ } | Select-Object -Unique)
+    if ($alive.Count -ne $lines.Count) {
+        [IO.File]::WriteAllText($script:AIProjectOverridesFile, ($alive -join "`n") + "`n",
+            (New-Object Text.UTF8Encoding $false))
+    }
+    return $alive
+}
+
+function Add-AIProjectOverride([string]$Path) {
+    $cur = Get-AIProjectOverrides
+    if ($cur -notcontains $Path) {
+        [IO.File]::WriteAllText($script:AIProjectOverridesFile, (($cur + $Path) -join "`n") + "`n",
+            (New-Object Text.UTF8Encoding $false))
+    }
+}
+
+function Remove-AIProjectOverride([string]$Path) {
+    $rest = @(Get-AIProjectOverrides | Where-Object { $_ -ne $Path })
+    $text = if ($rest.Count) { ($rest -join "`n") + "`n" } else { '' }
+    [IO.File]::WriteAllText($script:AIProjectOverridesFile, $text, (New-Object Text.UTF8Encoding $false))
 }
 
 # ---------------------------------------------------------------- usage log

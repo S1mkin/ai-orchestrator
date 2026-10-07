@@ -1,6 +1,8 @@
 # ai-orch set-gateway - set the gateway base URL in every file it lives in:
-# ~/.claude/settings.hapy.json, the live ~/.claude/settings.json and
-# ~/.claude-glm/settings.json. Files without the env key are skipped.
+# ~/.claude/settings.hapy.json, the live ~/.claude/settings.json,
+# ~/.claude-glm/settings.json and the project overrides written by
+# 'ai-orch mode hapy -Project' (registry: ~/.claude/orch-project-overrides.txt).
+# Files without the env key are skipped.
 # The address is NOT a secret: unlike the token it may come from a chat with
 # the agent, a script or CI - so the plain -BaseUrl parameter is the norm and
 # agents may run this command themselves.
@@ -15,12 +17,16 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if (-not $HomeDir) { $HomeDir = $HOME }
+. (Join-Path $PSScriptRoot 'common.ps1')
 
 $files = @(
     (Join-Path $HomeDir '.claude/settings.hapy.json'),
     (Join-Path $HomeDir '.claude/settings.json'),
     (Join-Path $HomeDir '.claude-glm/settings.json')
 )
+# project overrides carry the URL too and must not go stale on a move; the
+# registry is real-home only - a -HomeDir dry run must not touch projects
+if ($HomeDir -eq $HOME) { $files += Get-AIProjectOverrides }
 
 if (-not $BaseUrl) {
     # plain input is fine (no masking needed - the URL is not a secret); with

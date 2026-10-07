@@ -120,6 +120,8 @@ if ($Mode -eq 'hapy') {
         $j.env | Add-Member -NotePropertyName $k -NotePropertyValue $gwEnv[$k] -Force
     }
     [IO.File]::WriteAllText($sl, ($j | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
+    # register the file, so set-token / set-gateway keep its token fresh
+    Add-AIProjectOverride $sl
     "project override set: hapy ($root)"
     "reload VS Code window to apply: Ctrl+Shift+P -> 'Reload Window'"
     return
@@ -137,10 +139,12 @@ if (Test-Path $sl) {
         if (-not @($j.env.PSObject.Properties).Count) { $j.PSObject.Properties.Remove('env') }
         if (-not @($j.PSObject.Properties).Count) {
             Remove-Item $sl -Force
+            Remove-AIProjectOverride $sl
             "project override removed (empty settings.local.json deleted): $root follows the global mode"
         }
         else {
             [IO.File]::WriteAllText($sl, ($j | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
+            Remove-AIProjectOverride $sl
             "project override removed: $root follows the global mode"
         }
     }

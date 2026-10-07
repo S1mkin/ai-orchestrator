@@ -1,8 +1,10 @@
 # ai-orch set-token - set the gateway token in every file it lives in:
-# ~/.claude/settings.hapy.json, the live ~/.claude/settings.json and
-# ~/.claude-glm/settings.json. Files without the env key are skipped, so a
-# subscription-only machine is a no-op. Handles both a real old token and the
-# __HAPY_TOKEN__ placeholder, so it doubles as a post-install fixer.
+# ~/.claude/settings.hapy.json, the live ~/.claude/settings.json,
+# ~/.claude-glm/settings.json and the project overrides written by
+# 'ai-orch mode hapy -Project' (registry: ~/.claude/orch-project-overrides.txt).
+# Files without the env key are skipped, so a subscription-only machine is a
+# no-op. Handles both a real old token and the __HAPY_TOKEN__ placeholder, so
+# it doubles as a post-install fixer.
 # (The base URL has its own command: ai-orch set-gateway.)
 #
 #   ai-orch set-token                  # asks for the token IN THIS TERMINAL
@@ -17,12 +19,16 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if (-not $HomeDir) { $HomeDir = $HOME }
+. (Join-Path $PSScriptRoot 'common.ps1')
 
 $files = @(
     (Join-Path $HomeDir '.claude/settings.hapy.json'),
     (Join-Path $HomeDir '.claude/settings.json'),
     (Join-Path $HomeDir '.claude-glm/settings.json')
 )
+# project overrides carry the token too and must not go stale on rotation;
+# the registry is real-home only - a -HomeDir dry run must not touch projects
+if ($HomeDir -eq $HOME) { $files += Get-AIProjectOverrides }
 
 # ------------------------------------------------------------- interactive input
 # the secure default: the token is typed/pasted in the user's own terminal and
