@@ -23,10 +23,10 @@
 | Команда | Роль | Модель по умолчанию |
 | --- | --- | --- |
 | `claude-mode hapy\|claude\|status` | переключение бэкенда **основной сессии** (после Reload Window) | — |
-| `hapy-ask файл [файл…]` / `-Text` / stdin | digest: выжимка материала, ≤40 строк, ссылки `file:line` | MiniMax-M3 (шлюз) / haiku (нативно) |
+| `hapy-ask файл [файл…]` / `-Text` / stdin | digest: выжимка материала, ≤40 строк, ссылки `file:line` | glm-5.3-flash (шлюз) / haiku (нативно) |
 | `glm-task scout "задача"` | разведка кода по снимку репозитория, только чтение | glm-5.3 (шлюз) / haiku (нативно) |
 | `glm-task start "задача"` | черновик правки в снимке → патч в `patches/` | glm-5.3 (шлюз) / sonnet (нативно) |
-| `hapy-review -Spec … -Diff …` | оппонент: вердикт и замечания по ТЗ и/или диффу | авто: MiniMax-M3 (<8 КБ) / grok-4.7 (шлюз); sonnet (нативно) |
+| `hapy-review -Spec … -Diff …` | оппонент: вердикт и замечания по ТЗ и/или диффу | авто: glm-5.3 (<8 КБ) / grok-4.7 (шлюз); sonnet (нативно) |
 
 У `hapy-ask`, `hapy-review`, `glm-task` есть `-Backend auto|gateway|claude`:
 `auto` = шлюз, если в `~/.claude/settings.hapy.json` прописан env шлюза (адрес и токен без плейсхолдеров), иначе нативный `claude -p`. Режим `claude-mode` основной сессии оркестратору безразличен.
@@ -66,14 +66,28 @@ cd ai-orchestrator
 2. `git clone <url> && cd ai-orchestrator`;
 3. `pwsh ./install.ps1 -BaseUrl <адрес шлюза> -Token <ключ>` (или `-NoToken`, чтобы жить только на нативном бэкенде);
 4. добавьте скрипты в PATH и повесьте алиасы:
+
    ```sh
    echo 'export PATH="$PATH:$HOME/.claude/bin"' >> ~/.zshrc
    alias hapy-ask='pwsh $HOME/.claude/bin/hapy-ask.ps1'
    ```
+
    (либо вызывайте напрямую: `pwsh ~/.claude/bin/hapy-ask.ps1 файл`);
 5. проверка: `pwsh ~/.claude/bin/hapy-ask.ps1 README.md`.
 
 Что должно работать на macOS: шлюзовой бэкенд целиком (HTTP/SSE и запуск воркеров — переносимый .NET-код: `$HOME` вместо `USERPROFILE`, прямые слэши в путях), `claude-mode`, установщик (PATH добавляется вручную). Что написано, но **не проверялось**: нативный бэкенд — ветка запуска `claude` напрямую через stdin-пайп вместо cmd.exe есть в `hapy-lib.ps1` (`Send-CCMessage`), тестов на реальном Mac не было.
+
+## Шлюз hapy на новой машине
+
+hapy — LLM-шлюз с Anthropic-совместимым API: Claude Code говорит с ним как с обычным Anthropic-сервером, а тот проксирует запросы к моделям GLM/Grok/MiniMax. Подключение на машине, где шлюз никогда не использовался, — два независимых шага: первый достаточен для оркестратора, второй (по желанию) переводит на шлюз саму основную сессию.
+
+**Что понадобится:** адрес шлюза (`https://…`) и персональный токен вида `hapy_…` — их выдаёт администратор шлюза или личный кабинет. Нет токена — оркестратор всё равно работает: ставьте с `-NoToken` и используйте `-Backend claude`.
+
+**1. Воркеры через шлюз.** `install.ps1 -BaseUrl … -Token …` подставит адрес и токен в два файла: `~/.claude/settings.hapy.json` (конфиг шлюза для `hapy-ask`/`hapy-review`) и `~/.claude-glm/settings.json` (профиль воркеров `glm-task`). Основная сессия при этом не меняется. Проверка: `hapy-ask README.md` — в строке статуса должно быть `backend: gateway`.
+
+**2. Основная сессия через шлюз (по желанию).** `claude-mode hapy` — настроенный вариант копируется в живой `~/.claude/settings.json` (env `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`, модель по умолчанию `glm-5.3`, список моделей для `/model`), затем Reload Window (Ctrl+Shift+P). Теперь и основная сессия идёт через шлюз — модели GLM/Grok/MiniMax, оплата по тарифам шлюза, а не по подписке. Вернуться на встроенные модели: `claude-mode claude` + Reload Window. Текущий режим подскажет `claude-mode status`.
+
+Токен после установки хранится в `settings.hapy.json` и `~/.claude-glm/settings.json`, а после шага 2 — ещё и в живом `settings.json`. При ротации обновите его вручную во всех файлах: повторный запуск `install.ps1` уже настроенные файлы не перезаписывает.
 
 ## Как устроено
 

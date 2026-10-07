@@ -2,9 +2,11 @@
 # Role: opponent (a model other than the code writer). Prompt in
 # ~/.claude-glm/prompts/opponent.txt.
 # Backend 'auto': gateway when configured, else native claude -p (subscription).
-# Model 'auto': gateway -> MiniMax-M3 (<8 KB) / grok-4.7 (heavy);
-#               native  -> sonnet. NB: a native opponent is same-family Claude,
-#               weaker than a cross-vendor one - prefer the gateway for review.
+# Model 'auto': gateway -> glm-5.3 (<8 KB, strong reasoning, short material
+#               stays cheap) / grok-4.7 (heavy); native -> sonnet.
+#               NB: a native opponent is same-family Claude, weaker than a
+#               cross-vendor one - prefer the gateway for review.
+#               (MiniMax-M3 is avoided here: it leaks <think> into answers.)
 #
 #   hapy-review -Spec docs/plan.md                       # spec file (or literal text)
 #   hapy-review -Diff --cached                           # staged changes
@@ -61,7 +63,7 @@ $backend = Get-AIBackend $Backend
 $chosen = $Model
 if ($Model -eq 'auto') {
     if ($backend -eq 'gateway') {
-        if ($material.Length -lt 8192) { $chosen = 'MiniMax-M3' } else { $chosen = 'grok-4.7' }
+        if ($material.Length -lt 8192) { $chosen = 'glm-5.3' } else { $chosen = 'grok-4.7' }
     } else {
         $chosen = 'sonnet'
     }

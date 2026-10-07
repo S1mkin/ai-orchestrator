@@ -2,7 +2,8 @@
 # Role: digest. Prompt in ~/.claude-glm/prompts/digest.txt.
 # Backend 'auto': gateway (settings.hapy.json env) when configured, else native
 # claude -p on the subscription (~/.claude-worker). Model 'auto':
-# gateway -> MiniMax-M3, native -> haiku.
+# gateway -> glm-5.3-flash (light tier: summarize, fast, nearly free),
+# native -> haiku.
 #
 #   hapy-ask wiki/workflow.md
 #   hapy-ask file1.html file2.php
@@ -44,7 +45,7 @@ if ($hits) {
 
 $backend = Get-AIBackend $Backend
 if ($Model -eq 'auto') {
-    if ($backend -eq 'gateway') { $Model = 'MiniMax-M3' } else { $Model = 'haiku' }
+    if ($backend -eq 'gateway') { $Model = 'glm-5.3-flash' } else { $Model = 'haiku' }
 }
 Write-Host "digest: $Model (backend: $backend, material: $($material.Length) chars)"
 
