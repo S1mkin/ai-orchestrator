@@ -105,8 +105,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\name\ai-orchestrato
 
 ## 4. Расскажите пользователю, что дальше
 
-- Windows: команды появятся в **новом** терминале (PATH подхватывается только
-  новыми сессиями): `hapy-ask`, `hapy-review`, `glm-task`, `claude-mode`.
+- Windows: команды видны в любом **новом** сеансе PowerShell, включая
+  встроенный терминал VS Code: установщик добавил каталог в PATH (реестр) и
+  защищённую строку в профиль PowerShell, которая дописывает PATH при старте
+  каждого шелла (терминалы VS Code наследуют окружение самого процесса VS
+  Code, а оно старее установки). Если в конкретном окне команд всё ещё нет —
+  полностью закройте ВСЕ окна VS Code и запустите его заново (Reload Window не
+  перезапускает процесс), либо зовите по полному пути:
+  `& "$HOME\.claude\bin\orch-check.ps1"`.
 - macOS/Linux: установщик PATH не меняет — добавьте в `~/.zshrc` (или
   `~/.bashrc`) строку `export PATH="$PATH:$HOME/.claude/bin"` и при желании
   алиасы вида `alias hapy-ask='pwsh $HOME/.claude/bin/hapy-ask.ps1'`

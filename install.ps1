@@ -86,6 +86,33 @@ elseif ($isWin) {
         [Environment]::SetEnvironmentVariable('Path', ($userPath.TrimEnd(';') + ';' + $binDst), 'User')
         "added $binDst to user PATH (new terminals only)"
     }
+    # VS Code integrated terminals inherit the environment of the VS Code
+    # PROCESS, which may be older than this install - a fresh shell there
+    # never re-reads the registry PATH. Fix it at shell startup: append a
+    # guarded line to the PowerShell profiles (5.1 and 7), so every new
+    # shell, VS Code terminal included, sees the commands.
+    $marker = 'ai-orchestrator PATH - added by install.ps1'
+    $docs = [Environment]::GetFolderPath('MyDocuments')
+    $profileLines = @"
+# $marker (remove this block to undo)
+if ((Test-Path "`$HOME\.claude\bin") -and ((`$env:Path -split ';') -notcontains "`$HOME\.claude\bin")) { `$env:Path += ";`$HOME\.claude\bin" }
+"@
+    foreach ($prof in @(
+        (Join-Path $docs 'WindowsPowerShell\Microsoft.PowerShell_profile.ps1'),
+        (Join-Path $docs 'PowerShell\Microsoft.PowerShell_profile.ps1')
+    )) {
+        $dir = Split-Path $prof -Parent
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
+        $existing = if (Test-Path $prof) { Get-Content $prof -Raw -Encoding UTF8 } else { '' }
+        if ($existing -match [regex]::Escape('ai-orchestrator PATH')) { "profile already has the PATH line: $prof" }
+        else {
+            [IO.File]::WriteAllText($prof, $existing + $profileLines + "`r`n", (New-Object Text.UTF8Encoding $false))
+            "profile PATH line added: $prof"
+        }
+    }
+    if ((Get-ExecutionPolicy) -in @('Restricted', 'Default')) {
+        Write-Warning 'execution policy is Restricted: PowerShell profiles do not run, so this line is inert until scripts are allowed (Set-ExecutionPolicy RemoteSigned -Scope CurrentUser); the registry PATH still works after a FULL VS Code restart'
+    }
 }
 else {
     "macOS/Linux: add the scripts dir to PATH yourself, e.g. in ~/.zshrc:"
