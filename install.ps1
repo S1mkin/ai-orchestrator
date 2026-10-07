@@ -71,6 +71,9 @@ $workerDst = Join-Path $HomeDir '.claude-worker'
 New-Item -ItemType Directory -Force $workerDst | Out-Null
 Copy-Item (Join-Path $src 'profiles/worker/settings.json') $workerDst -Force
 Copy-Item (Join-Path $src 'profiles/worker/CLAUDE.md') $workerDst -Force
+# remember where the clone lives, so orch-update -Apply can pull+reinstall
+[IO.File]::WriteAllText((Join-Path $claudeDir 'orch-clone-path'), ($src + "`n"),
+    (New-Object Text.UTF8Encoding $false))
 
 # ---------------------------------------------------------------- PATH
 if ($dryRun) {
@@ -119,13 +122,14 @@ if (-not $NoToken -and ($interactiveOk -or ($Token -and $BaseUrl))) {
 # ---------------------------------------------------------------- summary
 ''
 'installed:'
-"  scripts : $binDst  (claude-mode, hapy-ask, hapy-review, glm-task)"
+"  scripts : $binDst  (claude-mode, hapy-ask, hapy-review, glm-task, orch-check, orch-status, orch-token, orch-update)"
+"  clone   : $src (recorded for orch-update -Apply)"
 "  profiles: $glmDst (gateway worker)"
 "            $workerDst (native worker)"
 "  variants: $claudeDir/settings.hapy.json, settings.claude.json"
 if (-not $dryRun) {
     'next:'
-    '  1. open a NEW terminal, run: claude-mode status'
+    '  1. open a NEW terminal, run: orch-check'
     '  2. gateway:  hapy-ask README.md          (needs URL + token)'
     '  3. native:   run "claude" once and /login (subscription), then: glm-task scout "test" -Backend claude -MaxTurns 5'
 }

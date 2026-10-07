@@ -210,3 +210,6 @@ if ($Mode -eq 'start') {
     Write-Host "apply to the working copy yourself (git apply --check first)."
 }
 Write-Host "snapshot: $snap (kept for inspection; delete when done)"
+$usageNote = "files=$(@($scanFiles).Count)"
+if ($answerHits) { $usageNote += ',answer-redacted' }
+Write-AIUsageLog $Mode $Model $backend $Task.Length -Note $usageNote

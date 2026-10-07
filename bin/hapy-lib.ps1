@@ -4,6 +4,27 @@
 # Runs on Windows PowerShell 5.1 and on pwsh 7 (macOS/Linux included);
 # $HOME works everywhere, path joins use forward slashes.
 
+# orchestrator version (bump on every released change; orch-update compares
+# this against the same line on GitHub)
+$script:OrchVersion = '1.1.0'
+$script:OrchRepoRaw = 'https://raw.githubusercontent.com/S1mkin/ai-orchestrator/main/bin/hapy-lib.ps1'
+
+function Get-AIRemoteVersion {
+    # latest OrchVersion from the public repo; '' when unreachable/unparsed
+    try {
+        $req = [Net.HttpWebRequest]::Create($script:OrchRepoRaw)
+        $req.Method = 'GET'
+        $req.Timeout = 15000
+        $req.ReadWriteTimeout = 15000
+        $resp = $req.GetResponse()
+        $reader = New-Object IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8)
+        $text = $reader.ReadToEnd()
+        $reader.Close(); $resp.Close()
+        if ($text -match '\$script:OrchVersion\s*=\s*''([0-9.]+)''') { return $Matches[1] }
+        return ''
+    } catch { return '' }
+}
+
 function Get-HapyConfig {
     $f = Join-Path $HOME '.claude/settings.hapy.json'
     if (-not (Test-Path $f)) { $f = Join-Path $HOME '.claude/settings.json' }
@@ -60,6 +81,31 @@ function Show-AIMaskedHits([string[]]$Hits) {
                 else { $h.Substring(0, 4) + ('*' * [Math]::Min(24, $h.Length - 4)) }
         Write-Host ("  hit {0}: {1} (length {2})" -f $n, $mask, $h.Length)
     }
+}
+
+# ---------------------------------------------------------------- usage log
+# Every worker call appends one TSV line to ~/.claude/orch-usage.tsv
+# (see orch-status for the summary). Only sizes and counters are logged -
+# never prompt, material or answer content.
+$script:AIUsageLogPath = Join-Path $HOME '.claude/orch-usage.tsv'
+
+function Write-AIUsageLog {
+    param([string]$Role, [string]$Model, [string]$Backend, [long]$MaterialChars,
+          [string]$TokensIn = '', [string]$TokensOut = '', [string]$Note = '')
+    # best-effort: a logging problem must never fail the worker call itself
+    try {
+        $dir = Split-Path $script:AIUsageLogPath -Parent
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $dir | Out-Null }
+        $header = ''
+        if (-not (Test-Path $script:AIUsageLogPath)) {
+            $header = "date`trole`tmodel`tbackend`tmaterial_chars`ttokens_in`ttokens_out`tnote`n"
+        }
+        $line = (@((Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Role, $Model, $Backend,
+                   $MaterialChars, $TokensIn, $TokensOut,
+                   (($Note -replace "[`r`n`t]", ' '))) -join "`t")
+        [IO.File]::AppendAllText($script:AIUsageLogPath, $header + $line + "`n",
+            (New-Object Text.UTF8Encoding $false))
+    } catch { }
 }
 
 function Send-HapyMessage {

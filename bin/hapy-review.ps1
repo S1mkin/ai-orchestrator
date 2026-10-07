@@ -84,6 +84,11 @@ if ($backend -eq 'gateway') {
     $r = Send-CCMessage -Model $chosen -Prompt (Get-HapyPrompt 'opponent') -Material $material `
         -TimeoutSec $TimeoutSec
 }
+if ($r.Usage -match '(\d+) in / (\d+) out') {
+    Write-AIUsageLog 'review' $chosen $backend $material.Length $Matches[1] $Matches[2]
+} else {
+    Write-AIUsageLog 'review' $chosen $backend $material.Length -Note 'no-usage'
+}
 Write-Output $r.Text
 Write-Output ''
 Write-Output $r.Usage
