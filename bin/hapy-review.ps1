@@ -14,12 +14,14 @@
 param(
     [string]$Spec,
     [string]$Diff = '',
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
     [string]$Model = 'auto',
+    [ValidateSet('auto', 'gateway', 'claude')]
     [string]$Backend = 'auto',
     [int]$MaxTokens = 3000,      # gateway only
     [int]$TimeoutSec = 600
 )
-. $PSScriptRoot\hapy-lib.ps1
+. (Join-Path $PSScriptRoot 'hapy-lib.ps1')
 $ErrorActionPreference = 'Stop'
 
 if (-not $Spec -and -not $Diff) {
@@ -33,13 +35,22 @@ if ($Spec) {
         $parts += (Read-HapyNumbered (Resolve-Path $Spec).Path)
     }
     else {
+        if ($Spec -match '[\\/]' -or $Spec -match '\.(md|txt|php|json|ps1|py|js|html)$') {
+            Write-Warning "-Spec looks like a path but was not found: $Spec (passing it as literal text)"
+        }
         $parts += '### SPEC'
         $parts += $Spec
     }
 }
 if ($Diff) {
     if (-not (Test-Path '.git')) { Write-Error 'not a git repository, but -Diff was requested' }
-    $diffText = (& git diff $Diff | Out-String)
+    # the diff goes through a file, not the pipeline: on PS 5.1 Out-String
+    # decodes native output with the console codepage and mangles non-ASCII
+    $tmpDiff = Join-Path ([IO.Path]::GetTempPath()) "aireview-diff-$PID.tmp"
+    & git -c core.quotepath=false diff $Diff --output=$tmpDiff
+    if ($LASTEXITCODE -ne 0) { Write-Error "git diff failed: git diff $Diff" }
+    $diffText = [IO.File]::ReadAllText($tmpDiff, [Text.Encoding]::UTF8)
+    Remove-Item $tmpDiff -Force -ErrorAction SilentlyContinue
     if (-not $diffText.Trim()) { Write-Error "empty diff: git diff $Diff" }
     $parts += "### DIFF (git diff $Diff)"
     $parts += $diffText
@@ -60,7 +71,7 @@ Write-Host "opponent: $chosen (backend: $backend, material: $($material.Length) 
 $hits = Find-HapySecrets $material
 if ($hits) {
     Write-Host 'ABORT - secret-like content in material, nothing sent:' -ForegroundColor Red
-    $hits | ForEach-Object { Write-Host "  $_" }
+    Show-AIMaskedHits $hits
     exit 1
 }
 

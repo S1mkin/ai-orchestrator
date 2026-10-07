@@ -10,13 +10,14 @@
 #   glm-task scout "<task>" -Backend claude                  force native
 # Model 'auto': gateway -> glm-5.3; native -> haiku (scout) / sonnet (start).
 #
-# Safety layers (native Windows has no OS sandbox - these are the walls):
+# Safety layers (no OS sandbox - these are the walls):
 #   1. work happens in a snapshot of HEAD (git archive), never the working copy
 #   2. known secret files are deleted from the snapshot before anything else
 #   3. content scan for secret-looking strings - any hit aborts the run
 #   4. isolated profile (~/.claude-glm or ~/.claude-worker): own settings,
 #      empty process env, allow-list of read-only commands, deny for git push/commit/network
 #   5. canon (CLAUDE.md/AGENTS.md) is read-only for the model
+#   6. the worker's answer is scanned before it reaches the console
 param(
     [Parameter(Position = 0, Mandatory = $true)]
     [ValidateSet('scout', 'start')]
@@ -25,14 +26,16 @@ param(
     [Parameter(Position = 1, Mandatory = $true)]
     [string]$Task,
 
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
     [string]$Model = 'auto',
+    [ValidateSet('auto', 'gateway', 'claude')]
     [string]$Backend = 'auto',
     [int]$MaxTurns = 40,
     [int]$TimeoutSec = 900
 )
 
 $ErrorActionPreference = 'Stop'
-. $PSScriptRoot\hapy-lib.ps1
+. (Join-Path $PSScriptRoot 'hapy-lib.ps1')
 
 # ---------------------------------------------------------------- locate things
 $repo = (Get-Location).Path
@@ -45,34 +48,24 @@ if ($Model -eq 'auto') {
     elseif ($Mode -eq 'scout')  { $Model = 'haiku' }
     else                        { $Model = 'sonnet' }
 }
-$profileDir = Join-Path $env:USERPROFILE '.claude-glm'
+Assert-AIModelName $Model
+$profileDir = Join-Path $HOME '.claude-glm'
 if ($backend -eq 'claude') { $profileDir = Initialize-CCWorkerProfile }
 
-$claudeExe = $null
-$cmd = Get-Command claude -ErrorAction SilentlyContinue
-if ($cmd) { $claudeExe = $cmd.Source }
-else {
-    $ext = Get-ChildItem "$env:USERPROFILE\.vscode\extensions" -Directory -Filter 'anthropic.claude-code-*' |
-        Sort-Object Name -Descending | Select-Object -First 1
-    if ($ext) {
-        $candidate = Join-Path $ext.FullName 'resources\native-binary\claude.exe'
-        if (Test-Path $candidate) { $claudeExe = $candidate }
-    }
-}
-if (-not $claudeExe) { Write-Error 'claude CLI not found (PATH or VS Code extension)' }
+$claudeExe = Find-CCBinary
 if (-not (Test-Path (Join-Path $profileDir 'settings.json'))) {
-    Write-Error "isolated profile missing: $profileDir\settings.json"
+    Write-Error "isolated profile missing: $profileDir/settings.json"
 }
 
 # ---------------------------------------------------------------- snapshot
 $name = Split-Path $repo -Leaf
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$snap = Join-Path $profileDir "snapshots\$name-$stamp"
+$snap = Join-Path $profileDir "snapshots/$name-$stamp"
 $patches = Join-Path $profileDir 'patches'
 New-Item -ItemType Directory -Force -Path $snap, $patches | Out-Null
 
 Write-Host "[1/5] snapshot of HEAD -> $snap"
-$tarFile = Join-Path $env:TEMP "glm-$name-$stamp.tar"
+$tarFile = Join-Path ([IO.Path]::GetTempPath()) "glm-$name-$stamp.tar"
 & git -C $repo archive --format=tar --output=$tarFile HEAD
 if ($LASTEXITCODE -ne 0) { Write-Error 'git archive failed' }
 & tar -xf $tarFile -C $snap
@@ -94,6 +87,7 @@ Get-ChildItem $snap -Recurse -File -Force | Where-Object {
 }
 
 Write-Host '[3/5] scanning snapshot for secret-looking content (abort on any hit)'
+# keep in sync with $script:HapySecretRegex in hapy-lib.ps1
 $scanRegex = @(
     'sk-ant-[A-Za-z0-9_-]{10,}',
     'sk-[A-Za-z0-9]{20,}',
@@ -101,7 +95,14 @@ $scanRegex = @(
     'AIza[0-9A-Za-z_-]{30,}',
     '-----BEGIN [A-Z ]*PRIVATE KEY-----',
     'eyJ[A-Za-z0-9_-]{30,}\.',
-    '(?i)(password|passwd|secret|api[_-]?key|access[_-]?token)["'']?\s*[:=]\s*["''][^"''\s]{8,}'
+    'hapy_[A-Za-z0-9_]{20,}',
+    'gho_[A-Za-z0-9]{30,}',
+    'ghp_[A-Za-z0-9]{30,}',
+    'xox[bpars]-[A-Za-z0-9-]{10,}',
+    'glpat-[A-Za-z0-9_-]{15,}',
+    'sk_live_[A-Za-z0-9]{20,}',
+    '(?i)(password|passwd|secret|api[_-]?key|access[_-]?token)["'']?\s*[:=]\s*["''][^"''\s]{8,}',
+    '(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*[A-Za-z0-9_./+=-]{10,}'
 ) -join '|'
 $skipExt = @('.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp', '.woff', '.woff2',
     '.ttf', '.eot', '.otf', '.zip', '.gz', '.tar', '.mp4', '.mp3', '.pdf', '.exe', '.dll')
@@ -111,17 +112,23 @@ $scanExclude = @('modx/core/model/', 'modx/core/components/', 'modx/core/docs/',
     'modx/manager/', 'modx/connectors/', 'modx/assets/components/')
 $scanFiles = Get-ChildItem $snap -Recurse -File | Where-Object {
     if (($skipExt -contains $_.Extension.ToLower()) -or ($_.Length -ge 2MB)) { return $false }
-    $rel = $_.FullName.Substring($snap.Length + 1).Replace('/', '\')
+    $rel = $_.FullName.Substring($snap.Length + 1).Replace('\', '/')
     foreach ($e in $scanExclude) {
-        if ($rel.StartsWith($e.Replace('/', '\'))) { return $false }
+        if ($rel.StartsWith($e, [StringComparison]::OrdinalIgnoreCase)) { return $false }
     }
     return $true
 }
-$hits = Select-String -Path $scanFiles.FullName -Pattern $scanRegex -AllMatches
+$hits = @()
+if ($scanFiles) { $hits = Select-String -Path $scanFiles.FullName -Pattern $scanRegex -AllMatches }
 if ($hits) {
     Write-Host 'ABORT - secret-like content found, the worker will not run:' -ForegroundColor Red
-    $hits | Select-Object -First 15 | ForEach-Object {
-        Write-Host ("  {0}:{1}: {2}" -f $_.Path.Substring($snap.Length + 1), $_.LineNumber, $_.Line.Trim().Substring(0, [Math]::Min(100, $_.Line.Trim().Length)))
+    foreach ($h in ($hits | Select-Object -First 15)) {
+        # mask the matched fragment: the raw line may contain the secret itself
+        $frag = $h.Matches[0].Value
+        $mask = if ($frag.Length -le 6) { '*' * $frag.Length }
+                else { $frag.Substring(0, 4) + ('*' * [Math]::Min(24, $frag.Length - 4)) }
+        Write-Host ("  {0}:{1}: matched {2} (length {3})" -f `
+            $h.Path.Substring($snap.Length + 1), $h.LineNumber, $mask, $frag.Length)
     }
     Remove-Item $snap -Recurse -Force
     Write-Error 'aborted: review the hits, fix or extend the scrub list, retry'
@@ -133,7 +140,7 @@ if ($hits) {
 & git -C $snap -c user.name=glm-snapshot -c user.email=glm@snapshot.local -c commit.gpgsign=false commit -q -m 'snapshot of HEAD'
 if ($LASTEXITCODE -ne 0) { Write-Error 'snapshot commit failed' }
 
-# ---------------------------------------------------------------- run GLM
+# ---------------------------------------------------------------- run worker
 Write-Host "[4/5] running worker ($($backend): $Model, $Mode) in isolated profile"
 
 function Quote-Arg([string]$s) { return '"' + ($s -replace '"', '\"') + '"' }
@@ -148,29 +155,50 @@ $psi.WorkingDirectory = $snap
 $psi.UseShellExecute = $false
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
+# explicit UTF-8: PS 5.1/.NET Framework would otherwise decode the pipes with
+# the console codepage and mangle non-ASCII answers
+$psi.StandardOutputEncoding = [Text.Encoding]::UTF8
+$psi.StandardErrorEncoding = [Text.Encoding]::UTF8
 $psi.EnvironmentVariables.Clear()
-foreach ($k in @('PATH', 'PATHEXT', 'TEMP', 'TMP', 'SYSTEMROOT', 'COMSPEC', 'USERPROFILE')) {
-    $psi.EnvironmentVariables[$k] = [Environment]::GetEnvironmentVariable($k)
+foreach ($k in @('PATH', 'PATHEXT', 'TEMP', 'TMP', 'TMPDIR', 'SYSTEMROOT', 'COMSPEC', 'USERPROFILE', 'HOME')) {
+    $v = [Environment]::GetEnvironmentVariable($k)
+    if ($v) { $psi.EnvironmentVariables[$k] = $v }
 }
 $psi.EnvironmentVariables['LANG'] = 'en_US.UTF-8'
 $psi.EnvironmentVariables['CLAUDE_CONFIG_DIR'] = $profileDir
 
 $p = [System.Diagnostics.Process]::Start($psi)
+# both pipes are read asynchronously: a full stdout pipe would block the
+# worker while WaitForExit waits for the worker - a deadlock on long answers
+$stdoutTask = $p.StandardOutput.ReadToEndAsync()
 $stderrTask = $p.StandardError.ReadToEndAsync()
 if (-not $p.WaitForExit($TimeoutSec * 1000)) {
     $p.Kill()
     Write-Error "timeout after ${TimeoutSec}s - worker killed, snapshot kept: $snap"
 }
-$answer = $p.StandardOutput.ReadToEnd()
+$answer = $stdoutTask.Result
 $stderr = $stderrTask.Result
 
 Write-Host '[5/5] result'
 Write-Host ('-' * 60)
-Write-Host $answer
+$answerHits = Find-HapySecrets $answer
+if ($answerHits) {
+    # the worker echoed secret-like content - printing it verbatim would leak
+    # into the transcript; keep the full text on disk for manual inspection
+    $kept = Join-Path $snap 'worker-output.txt'
+    [IO.File]::WriteAllText($kept, $answer, (New-Object Text.UTF8Encoding $false))
+    Write-Host 'REDACTED - worker output contains secret-like fragments:' -ForegroundColor Red
+    Show-AIMaskedHits $answerHits
+    Write-Host "full output kept at: $kept"
+}
+else {
+    Write-Host $answer
+}
 Write-Host ('-' * 60)
 if ($p.ExitCode -ne 0) {
     Write-Host "claude exit code: $($p.ExitCode)" -ForegroundColor Red
-    Write-Host $stderr
+    $stderrHits = Find-HapySecrets $stderr
+    if ($stderrHits) { Show-AIMaskedHits $stderrHits } else { Write-Host $stderr }
 }
 
 if ($Mode -eq 'start') {

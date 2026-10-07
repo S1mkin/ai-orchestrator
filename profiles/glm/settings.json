@@ -1,6 +1,6 @@
 {
   "env": {
-    "ANTHROPIC_BASE_URL": "https://hapy.hplatform.ai",
+    "ANTHROPIC_BASE_URL": "__HAPY_BASE_URL__",
     "ANTHROPIC_AUTH_TOKEN": "__HAPY_TOKEN__",
     "ANTHROPIC_MODEL": "glm-5.3"
   },

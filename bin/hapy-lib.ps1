@@ -1,14 +1,19 @@
 # hapy-lib - shared helpers for hapy-ask / hapy-review.
 # ASCII only on purpose: PS 5.1 reads BOM-less .ps1 as ANSI, so Russian
 # prompt text lives in ~/.claude-glm/prompts/*.txt (read as UTF-8).
+# Runs on Windows PowerShell 5.1 and on pwsh 7 (macOS/Linux included);
+# $HOME works everywhere, path joins use forward slashes.
 
 function Get-HapyConfig {
-    $f = Join-Path $env:USERPROFILE '.claude\settings.hapy.json'
-    if (-not (Test-Path $f)) { $f = Join-Path $env:USERPROFILE '.claude\settings.json' }
+    $f = Join-Path $HOME '.claude/settings.hapy.json'
+    if (-not (Test-Path $f)) { $f = Join-Path $HOME '.claude/settings.json' }
     if (-not (Test-Path $f)) { Write-Error "settings with gateway env not found: $f" }
     $j = Get-Content $f -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $j.env.ANTHROPIC_BASE_URL -or -not $j.env.ANTHROPIC_AUTH_TOKEN) {
         Write-Error "no ANTHROPIC_BASE_URL/ANTHROPIC_AUTH_TOKEN in $f"
+    }
+    if ($j.env.ANTHROPIC_AUTH_TOKEN -match '^__' -or $j.env.ANTHROPIC_BASE_URL -match '^__') {
+        Write-Error "$f still has __HAPY_TOKEN__/__HAPY_BASE_URL__ placeholders - run install.ps1 -Token <key> -BaseUrl <url>, or edit by hand"
     }
     return @{ Base = $j.env.ANTHROPIC_BASE_URL; Token = $j.env.ANTHROPIC_AUTH_TOKEN }
 }
@@ -20,13 +25,41 @@ $script:HapySecretRegex = @(
     'AIza[0-9A-Za-z_-]{30,}',
     '-----BEGIN [A-Z ]*PRIVATE KEY-----',
     'eyJ[A-Za-z0-9_-]{30,}\.',
-    '(?i)(password|passwd|secret|api[_-]?key|access[_-]?token)["'']?\s*[:=]\s*["''][^"''\s]{8,}'
+    'hapy_[A-Za-z0-9_]{20,}',
+    'gho_[A-Za-z0-9]{30,}',
+    'ghp_[A-Za-z0-9]{30,}',
+    'xox[bpars]-[A-Za-z0-9-]{10,}',
+    'glpat-[A-Za-z0-9_-]{15,}',
+    'sk_live_[A-Za-z0-9]{20,}',
+    '(?i)(password|passwd|secret|api[_-]?key|access[_-]?token)["'']?\s*[:=]\s*["''][^"''\s]{8,}',
+    '(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*[A-Za-z0-9_./+=-]{10,}'
 ) -join '|'
+# NB: glm-task keeps its own $scanRegex copy of this list - update both.
 
 function Find-HapySecrets([string]$Text) {
     # returns up to 5 matched fragments, empty array when clean
     $m = [regex]::Matches($Text, $script:HapySecretRegex)
     return @($m | Select-Object -First 5 | ForEach-Object { $_.Value })
+}
+
+function Assert-AIModelName([string]$Model) {
+    # the model string lands in a claude command line and inside a cmd /c
+    # line - keep it to a plain identifier, no flags, no metacharacters
+    if ($Model -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
+        Write-Error "suspicious model name rejected: $Model"
+    }
+}
+
+function Show-AIMaskedHits([string[]]$Hits) {
+    # print masked fragments - the raw values are secrets and must not
+    # land in the transcript/console
+    $n = 0
+    foreach ($h in $Hits) {
+        $n++
+        $mask = if ($h.Length -le 6) { '*' * $h.Length }
+                else { $h.Substring(0, 4) + ('*' * [Math]::Min(24, $h.Length - 4)) }
+        Write-Host ("  hit {0}: {1} (length {2})" -f $n, $mask, $h.Length)
+    }
 }
 
 function Send-HapyMessage {
@@ -40,6 +73,7 @@ function Send-HapyMessage {
     # Always streams (SSE): long generations outlive the gateway's proxy
     # timeout on non-streaming requests (504), and the UTF8 StreamReader
     # fixes PS 5.1 charset guessing on the response.
+    Assert-AIModelName $Model
     $cfg = Get-HapyConfig
     $payload = @{
         model       = $Model
@@ -100,15 +134,17 @@ function Send-HapyMessage {
 }
 
 function Get-HapyPrompt([string]$Name) {
-    $f = Join-Path $env:USERPROFILE ".claude-glm\prompts\$Name.txt"
+    $f = Join-Path $HOME ".claude-glm/prompts/$Name.txt"
     if (-not (Test-Path $f)) { Write-Error "prompt file missing: $f" }
     return (Get-Content $f -Raw -Encoding UTF8)
 }
 
 function Read-HapyNumbered([string]$Path) {
     # file content with line numbers, so the model can cite file:line
+    # -Width: Out-String wraps at the console width by default and would
+    # silently break long lines the model is asked to cite by number
     $i = 0
-    return ((Get-Content $Path -Encoding UTF8) | ForEach-Object { $i++; '{0,5}: {1}' -f $i, $_ } | Out-String)
+    return ((Get-Content $Path -Encoding UTF8) | ForEach-Object { $i++; '{0,5}: {1}' -f $i, $_ } | Out-String -Width 4096)
 }
 
 # ------------------------------------------------------------- native backend
@@ -117,12 +153,15 @@ function Read-HapyNumbered([string]$Path) {
 # gateway token is never written into this profile.
 
 function Get-AIBackend([string]$Backend = 'auto') {
-    # 'auto': gateway when settings.hapy.json carries gateway env, else native
+    # 'auto': gateway when settings.hapy.json carries real gateway env
+    # (a __placeholder__ means NOT configured), else native
     if ($Backend -ne 'auto') { return $Backend }
-    $f = Join-Path $env:USERPROFILE '.claude\settings.hapy.json'
+    $f = Join-Path $HOME '.claude/settings.hapy.json'
     if (Test-Path $f) {
         $j = Get-Content $f -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($j.env.ANTHROPIC_BASE_URL -and $j.env.ANTHROPIC_AUTH_TOKEN) { return 'gateway' }
+        if ($j.env.ANTHROPIC_BASE_URL -and $j.env.ANTHROPIC_AUTH_TOKEN -and
+            $j.env.ANTHROPIC_BASE_URL -notmatch '^__' -and
+            $j.env.ANTHROPIC_AUTH_TOKEN -notmatch '^__') { return 'gateway' }
     }
     return 'claude'
 }
@@ -130,12 +169,14 @@ function Get-AIBackend([string]$Backend = 'auto') {
 function Find-CCBinary {
     $c = Get-Command claude -ErrorAction SilentlyContinue
     if ($c) { return $c.Source }
-    $ext = Get-ChildItem (Join-Path $env:USERPROFILE '.vscode\extensions') -Directory `
+    $ext = Get-ChildItem (Join-Path $HOME '.vscode/extensions') -Directory `
         -Filter 'anthropic.claude-code-*' -ErrorAction SilentlyContinue |
         Sort-Object Name -Descending | Select-Object -First 1
     if ($ext) {
-        $candidate = Join-Path $ext.FullName 'resources\native-binary\claude.exe'
-        if (Test-Path $candidate) { return $candidate }
+        foreach ($bin in @('claude.exe', 'claude')) {
+            $candidate = Join-Path $ext.FullName "resources/native-binary/$bin"
+            if (Test-Path $candidate) { return $candidate }
+        }
     }
     Write-Error 'claude CLI not found (PATH or VS Code extension)'
 }
@@ -143,16 +184,16 @@ function Find-CCBinary {
 function Initialize-CCWorkerProfile {
     # Fresh copy of the subscription login on every call: tokens refresh in the
     # main profile, a stale copy would log the worker out.
-    $prof = Join-Path $env:USERPROFILE '.claude-worker'
+    $prof = Join-Path $HOME '.claude-worker'
     New-Item -ItemType Directory -Force $prof | Out-Null
-    $creds = Join-Path $env:USERPROFILE '.claude\.credentials.json'
+    $creds = Join-Path $HOME '.claude/.credentials.json'
     if (-not (Test-Path $creds)) {
         Write-Error "no subscription login: $creds missing (run claude, /login once)"
     }
     Copy-Item $creds (Join-Path $prof '.credentials.json') -Force
     $mini = Join-Path $prof '.claude.json'
     if (-not (Test-Path $mini)) {
-        $mainF = Join-Path $env:USERPROFILE '.claude.json'
+        $mainF = Join-Path $HOME '.claude.json'
         $acct = $null
         if (Test-Path $mainF) {
             $main = Get-Content $mainF -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -172,49 +213,86 @@ function Send-CCMessage {
         [int]$TimeoutSec = 300
     )
     # Native transport: claude -p with NO prompt argument - the full text
-    # (prompt + material) goes in via stdin from a UTF-8 file, the answer goes
-    # out to a file. cmd.exe redirection instead of pipes: no pipe-buffer
-    # deadlock on long answers, no .NET Framework encoding guessing, and no
-    # quoting problems (cmd cannot carry multi-line Russian prompts as args).
+    # (prompt + material) goes in via stdin. On Windows the call rides
+    # through cmd.exe file redirection: no pipe-buffer deadlock, no .NET
+    # Framework encoding guessing, no quoting problems (cmd cannot carry
+    # multi-line non-ASCII prompts as args). On macOS/Linux (pwsh 7)
+    # claude is launched directly and both pipes are read asynchronously.
+    Assert-AIModelName $Model
     $prof = Initialize-CCWorkerProfile
-    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $inFile  = Join-Path $env:TEMP "ccw-$stamp.in"
-    $outFile = Join-Path $env:TEMP "ccw-$stamp.out"
-    $errFile = Join-Path $env:TEMP "ccw-$stamp.err"
-    [IO.File]::WriteAllText($inFile, ($Prompt + "`n`n---`n`n" + $Material), (New-Object Text.UTF8Encoding $false))
+    $fullText = $Prompt + "`n`n---`n`n" + $Material
 
+    if ($env:OS -eq 'Windows_NT') {
+        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $inFile  = Join-Path $env:TEMP "ccw-$stamp.in"
+        $outFile = Join-Path $env:TEMP "ccw-$stamp.out"
+        $errFile = Join-Path $env:TEMP "ccw-$stamp.err"
+        [IO.File]::WriteAllText($inFile, $fullText, (New-Object Text.UTF8Encoding $false))
+
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $env:ComSpec
+        # Outer quotes around the whole /c payload are REQUIRED: cmd strips the
+        # first and last quote, which leaves a well-formed command; without them
+        # it mangles the quoted exe path. Multi-line text never appears in the
+        # arguments - the prompt rides in via stdin, so this quoting is safe.
+        $psi.Arguments = '/c ""{0}" -p --model {1} --max-turns 2 < "{2}" > "{3}" 2> "{4}""' -f `
+            (Find-CCBinary), $Model, $inFile, $outFile, $errFile
+        $psi.WorkingDirectory = $env:TEMP
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        foreach ($k in @('ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_MODEL',
+                         'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_API_KEY')) {
+            $psi.EnvironmentVariables.Remove($k)
+        }
+        $psi.EnvironmentVariables['CLAUDE_CONFIG_DIR'] = $prof
+
+        $p = [System.Diagnostics.Process]::Start($psi)
+        if (-not $p.WaitForExit($TimeoutSec * 1000)) {
+            $p.Kill()
+            throw "claude -p timeout after ${TimeoutSec}s (the worker process may still be running)"
+        }
+        $text = ''
+        if (Test-Path $outFile) { $text = [IO.File]::ReadAllText($outFile, [Text.Encoding]::UTF8) }
+        if ($p.ExitCode -ne 0) {
+            $err = ''
+            if (Test-Path $errFile) {
+                $err = (([IO.File]::ReadAllText($errFile, [Text.Encoding]::UTF8) -split "`n") | Select-Object -Last 5) -join ' '
+            }
+            throw ("claude -p failed (exit {0}): {1} (kept for inspection: {2}, {3})" -f `
+                $p.ExitCode, $err, $outFile, $errFile)
+        }
+        Remove-Item $inFile, $outFile, $errFile -Force -ErrorAction SilentlyContinue
+        return @{ Text = $text.Trim(); Usage = "(native: $Model via claude -p, subscription quota)" }
+    }
+
+    # ------------------------------------------------ macOS / Linux (pwsh 7)
+    # NB: this branch was written for portability but NOT tested on a real
+    # Mac - reports welcome.
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $env:ComSpec
-    # Outer quotes around the whole /c payload are REQUIRED: cmd strips the
-    # first and last quote, which leaves a well-formed command; without them
-    # it mangles the quoted exe path. Multi-line text never appears in the
-    # arguments - the prompt rides in via stdin, so this quoting is safe.
-    $psi.Arguments = '/c ""{0}" -p --model {1} --max-turns 2 < "{2}" > "{3}" 2> "{4}""' -f `
-        (Find-CCBinary), $Model, $inFile, $outFile, $errFile
-    $psi.WorkingDirectory = $env:TEMP
+    $psi.FileName = (Find-CCBinary)
+    $psi.Arguments = "-p --model $Model --max-turns 2"
+    $psi.WorkingDirectory = [IO.Path]::GetTempPath()
     $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
     foreach ($k in @('ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_MODEL',
                      'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_API_KEY')) {
         $psi.EnvironmentVariables.Remove($k)
     }
     $psi.EnvironmentVariables['CLAUDE_CONFIG_DIR'] = $prof
-
     $p = [System.Diagnostics.Process]::Start($psi)
+    $outTask = $p.StandardOutput.ReadToEndAsync()
+    $errTask = $p.StandardError.ReadToEndAsync()
+    $p.StandardInput.Write($fullText)
+    $p.StandardInput.Close()
     if (-not $p.WaitForExit($TimeoutSec * 1000)) {
         $p.Kill()
         throw "claude -p timeout after ${TimeoutSec}s (the worker process may still be running)"
     }
-    $text = ''
-    if (Test-Path $outFile) { $text = [IO.File]::ReadAllText($outFile, [Text.Encoding]::UTF8) }
     if ($p.ExitCode -ne 0) {
-        $err = ''
-        if (Test-Path $errFile) {
-            $err = (([IO.File]::ReadAllText($errFile, [Text.Encoding]::UTF8) -split "`n") | Select-Object -Last 5) -join ' '
-        }
-        throw ("claude -p failed (exit {0}): {1} (kept for inspection: {2}, {3})" -f `
-            $p.ExitCode, $err, $outFile, $errFile)
+        $err = (($errTask.Result -split "`n") | Select-Object -Last 5) -join ' '
+        throw ("claude -p failed (exit {0}): {1}" -f $p.ExitCode, $err)
     }
-    Remove-Item $inFile, $outFile, $errFile -Force -ErrorAction SilentlyContinue
-    return @{ Text = $text.Trim(); Usage = "(native: $Model via claude -p, subscription quota)" }
+    return @{ Text = $outTask.Result.Trim(); Usage = "(native: $Model via claude -p, subscription quota)" }
 }

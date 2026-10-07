@@ -8,7 +8,7 @@ param(
     [string]$Mode = 'status'
 )
 
-$dir = Join-Path $env:USERPROFILE '.claude'
+$dir = Join-Path $HOME '.claude'
 $live = Join-Path $dir 'settings.json'
 
 if ($Mode -eq 'help' -or $Mode -eq '') {
@@ -21,7 +21,7 @@ if ($Mode -eq 'help' -or $Mode -eq '') {
 
 if ($Mode -eq 'status') {
     $raw = Get-Content $live -Raw -ErrorAction SilentlyContinue
-    if ($raw -match 'hapy\.hplatform\.ai') { "current mode: hapy (gateway)" }
+    if ($raw -match 'ANTHROPIC_BASE_URL') { "current mode: hapy (gateway)" }
     else { "current mode: claude (built-in)" }
     return
 }

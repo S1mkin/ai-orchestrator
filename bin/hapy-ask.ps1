@@ -13,21 +13,23 @@ param(
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$Paths,
     [string]$Text,
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')]
     [string]$Model = 'auto',
+    [ValidateSet('auto', 'gateway', 'claude')]
     [string]$Backend = 'auto',
     [int]$MaxTokens = 2000,      # gateway only
     [int]$TimeoutSec = 300
 )
-. $PSScriptRoot\hapy-lib.ps1
+. (Join-Path $PSScriptRoot 'hapy-lib.ps1')
 $ErrorActionPreference = 'Stop'
 
-if (-not $Paths -and -not $Text) { $Text = ($input | Out-String) }
+if (-not $Paths -and -not $Text) { $Text = ($input | Out-String -Width 4096) }
 if (-not $Paths -and -not $Text.Trim()) { Write-Error 'nothing to digest: pass file paths, -Text, or stdin' }
 
 $parts = @()
 foreach ($p in $Paths) {
     if (-not (Test-Path $p)) { Write-Error "file not found: $p" }
-    $parts += ("### FILE: {0}" -f (Split-Path $p -Leaf))
+    $parts += ("### FILE: {0}" -f $p)
     $parts += (Read-HapyNumbered (Resolve-Path $p).Path)
 }
 if ($Text.Trim()) { $parts += "### TEXT"; $parts += $Text }
@@ -36,7 +38,7 @@ $material = $parts -join "`n"
 $hits = Find-HapySecrets $material
 if ($hits) {
     Write-Host 'ABORT - secret-like content in material, nothing sent:' -ForegroundColor Red
-    $hits | ForEach-Object { Write-Host "  $_" }
+    Show-AIMaskedHits $hits
     exit 1
 }
 
