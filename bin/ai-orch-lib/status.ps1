@@ -1,14 +1,14 @@
-# orch-status - usage summary from ~/.claude/orch-usage.tsv, appended by
-# hapy-ask / hapy-review / glm-task after every worker call. Read-only.
+# ai-orch status - usage summary from ~/.claude/orch-usage.tsv, appended by
+# ai-orch ask / ai-orch review / ai-orch task after every worker call. Read-only.
 # material_chars shows how much raw text was kept OUT of the main session,
 # gw tokens - what the cheap workers consumed (gateway counters are
 # approximate: trust the trend, not the exact numbers).
 #
-#   orch-status             # totals by role/model + last 10 calls
-#   orch-status -Last 30
+#   ai-orch status             # totals by role/model + last 10 calls
+#   ai-orch status -Last 30
 param([int]$Last = 10)
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'hapy-lib.ps1')
+. (Join-Path $PSScriptRoot 'common.ps1')
 
 if (-not (Test-Path $script:AIUsageLogPath)) {
     Write-Host 'no usage yet - the log appears after the first worker call'

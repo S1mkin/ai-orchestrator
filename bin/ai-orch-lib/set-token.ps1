@@ -1,16 +1,16 @@
-# orch-set-token - set the gateway token in every file it lives in:
+# ai-orch set-token - set the gateway token in every file it lives in:
 # ~/.claude/settings.hapy.json, the live ~/.claude/settings.json and
 # ~/.claude-glm/settings.json. Files without the env key are skipped, so a
 # subscription-only machine is a no-op. Handles both a real old token and the
 # __HAPY_TOKEN__ placeholder, so it doubles as a post-install fixer.
-# (The base URL has its own command: orch-set-gateway.)
+# (The base URL has its own command: ai-orch set-gateway.)
 #
-#   orch-set-token                  # asks for the token IN THIS TERMINAL
+#   ai-orch set-token                  # asks for the token IN THIS TERMINAL
 #                                   # (secure: the value never passes through
 #                                   # a chat or an agent transcript; masked on
 #                                   # pwsh 7+)
-#   orch-set-token -Token hapy_...  # non-interactive (CI, scripts, opt-in)
-#   orch-set-token -HomeDir C:\temp\fakehome ...   # test placement
+#   ai-orch set-token -Token hapy_...  # non-interactive (CI, scripts, opt-in)
+#   ai-orch set-token -HomeDir C:\temp\fakehome ...   # test placement
 param(
     [string]$Token = '',
     [string]$HomeDir = ''
@@ -69,7 +69,7 @@ foreach ($f in $files) {
 $mask = $Token.Substring(0, 4) + ('*' * [Math]::Min(24, $Token.Length - 4))
 "token now: $mask (length $($Token.Length))"
 $leftTok = @($files | Where-Object { (Test-Path $_) -and ((Get-Content $_ -Raw -Encoding UTF8) -match '__HAPY_TOKEN__') })
-if ($leftTok) { Write-Warning "token placeholders remain in: $($leftTok -join ', ') - orch-check will flag them" }
+if ($leftTok) { Write-Warning "token placeholders remain in: $($leftTok -join ', ') - ai-orch check will flag them" }
 $leftUrl = @($files | Where-Object { (Test-Path $_) -and ((Get-Content $_ -Raw -Encoding UTF8) -match '__HAPY_BASE_URL__') })
 if ($leftUrl) { 'hint: gateway URL placeholders remain - ai-orch set-gateway sets the address' }
 'verify: ai-orch check -Live'

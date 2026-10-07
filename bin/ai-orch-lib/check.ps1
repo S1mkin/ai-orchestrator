@@ -1,14 +1,14 @@
-# orch-check - read-only health check of the installed orchestrator: placement,
+# ai-orch check - read-only health check of the installed orchestrator: placement,
 # configs, worker profiles, PATH and the usage log. -Live adds a tiny gateway
 # request, -Native a tiny subscription (claude -p) request. Exit code 1 when
 # something needs attention.
 #
-#   orch-check              # files and configs only, no network
-#   orch-check -Live        # + gateway ping (needs configured token)
-#   orch-check -Live -Native
+#   ai-orch check              # files and configs only, no network
+#   ai-orch check -Live        # + gateway ping (needs configured token)
+#   ai-orch check -Live -Native
 param([switch]$Live, [switch]$Native)
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'hapy-lib.ps1')
+. (Join-Path $PSScriptRoot 'common.ps1')
 
 $script:problems = 0
 function Ok([string]$msg)   { Write-Host ('  [ok]   ' + $msg) -ForegroundColor Green }
@@ -22,12 +22,17 @@ function Mask-Token([string]$t) {
 # ---------------------------------------------------------------- scripts + PATH
 Write-Host 'scripts'
 Info "version: $script:OrchVersion (check for updates: ai-orch update)"
-$bin = $PSScriptRoot
-foreach ($s in @('ai-orch.ps1', 'hapy-lib.ps1', 'hapy-ask.ps1', 'hapy-review.ps1', 'glm-task.ps1',
-                 'claude-mode.ps1', 'orch-token.ps1', 'orch-set-token.ps1', 'orch-set-gateway.ps1',
-                 'orch-status.ps1', 'orch-update.ps1')) {
-    if (Test-Path (Join-Path $bin $s)) { Ok $s } else { Bad "missing: $(Join-Path $bin $s)" }
+# this file lives in <bin>/ai-orch-lib; only ai-orch.ps1 sits in <bin> (on PATH)
+$lib = $PSScriptRoot
+$bin = Split-Path $lib -Parent
+if (Test-Path (Join-Path $bin 'ai-orch.ps1')) { Ok 'ai-orch.ps1' } else { Bad "missing: $(Join-Path $bin 'ai-orch.ps1')" }
+foreach ($s in @('common.ps1', 'ask.ps1', 'review.ps1', 'task.ps1', 'mode.ps1', 'check.ps1',
+                 'status.ps1', 'set-token.ps1', 'set-gateway.ps1', 'update.ps1')) {
+    if (Test-Path (Join-Path $lib $s)) { Ok "ai-orch-lib/$s" } else { Bad "missing: $(Join-Path $lib $s)" }
 }
+$legacy = @(Get-ChildItem $bin -File -ErrorAction SilentlyContinue |
+    Where-Object { $script:OrchLegacyScripts -contains $_.Name })
+if ($legacy) { Bad "pre-1.5 commands left in ${bin}: $(@($legacy.Name) -join ', ') - re-run install.ps1, it removes them" }
 $isWin = ($env:OS -eq 'Windows_NT')
 $sep = if ($isWin) { ';' } else { ':' }
 $norm = { param($p) $p.Replace('\', '/').TrimEnd('/').ToLower() }
@@ -78,8 +83,29 @@ foreach ($p in @('digest', 'opponent')) {
 }
 if (Test-Path (Join-Path $HOME '.claude-worker/settings.json')) { Ok '~/.claude-worker (native backend)' }
 else { Bad '~/.claude-worker/settings.json missing - re-run install.ps1' }
+# the path guard is the worker's main wall, and a hook that fails to start
+# lets the tool call through - so run it for real on a probe outside the
+# snapshot: it must block (exit 2)
+$psExe = if ($env:OS -eq 'Windows_NT') { 'powershell' } else { 'pwsh' }
+foreach ($prof in @('.claude-glm', '.claude-worker')) {
+    $guard = Join-Path $HOME "$prof/guard-paths.ps1"
+    $hooked = (Test-Path (Join-Path $HOME "$prof/settings.json")) -and
+        ((Get-Content (Join-Path $HOME "$prof/settings.json") -Raw -Encoding UTF8) -match 'guard-paths\.ps1')
+    if (-not (Test-Path $guard) -or -not $hooked) { Bad "~/$prof`: path guard hook not installed - re-run install.ps1"; continue }
+    $probeRoot = Join-Path ([IO.Path]::GetTempPath()) 'ai-orch-probe'
+    $probe = @{ tool_name = 'Read'; cwd = $probeRoot
+                tool_input = @{ file_path = (Join-Path $HOME '.ssh/id_rsa') } } | ConvertTo-Json -Compress
+    $prevCwd = $env:CLAUDE_PROJECT_DIR
+    $env:CLAUDE_PROJECT_DIR = $probeRoot
+    $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    try { $null = $probe | & $psExe -NoProfile -ExecutionPolicy Bypass -File $guard 2>$null; $code = $LASTEXITCODE }
+    catch { $code = -1 }
+    finally { $ErrorActionPreference = $prevEap; $env:CLAUDE_PROJECT_DIR = $prevCwd }
+    if ($code -eq 2) { Ok "~/$prof`: path guard blocks reads outside the snapshot" }
+    else { Bad "~/$prof`: path guard did NOT block a probe (exit $code) - workers could read outside the snapshot" }
+}
 try { Ok ('claude CLI: ' + (Find-CCBinary)) }
-catch { Bad 'claude CLI not found (needed by glm-task and the native backend)' }
+catch { Bad 'claude CLI not found (needed by ai-orch task and the native backend)' }
 
 # ---------------------------------------------------------------- usage log
 if (Test-Path $script:AIUsageLogPath) {
@@ -113,3 +139,4 @@ if ($Native) {
 ''
 if ($script:problems -gt 0) { Write-Host "PROBLEMS: $script:problems" -ForegroundColor Red; exit 1 }
 Write-Host 'ALL OK' -ForegroundColor Green
+exit 0   # explicit: the guard probe above leaves LASTEXITCODE=2, and ai-orch passes it on

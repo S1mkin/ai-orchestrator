@@ -1,13 +1,19 @@
-# hapy-lib - shared helpers for hapy-ask / hapy-review.
+# common - shared helpers, dot-sourced by ai-orch and every subcommand script.
 # ASCII only on purpose: PS 5.1 reads BOM-less .ps1 as ANSI, so Russian
 # prompt text lives in ~/.claude-glm/prompts/*.txt (read as UTF-8).
 # Runs on Windows PowerShell 5.1 and on pwsh 7 (macOS/Linux included);
 # $HOME works everywhere, path joins use forward slashes.
 
-# orchestrator version (bump on every released change; orch-update compares
+# orchestrator version (bump on every released change; ai-orch update compares
 # this against the same line on GitHub)
-$script:OrchVersion = '1.4.2'
-$script:OrchRepoRaw = 'https://raw.githubusercontent.com/S1mkin/ai-orchestrator/main/bin/hapy-lib.ps1'
+$script:OrchVersion = '1.5.0'
+$script:OrchRepoRaw = 'https://raw.githubusercontent.com/S1mkin/ai-orchestrator/main/bin/ai-orch-lib/common.ps1'
+
+# pre-1.5 standalone commands: install.ps1 deletes them from ~/.claude/bin,
+# ai-orch check flags any that are left
+$script:OrchLegacyScripts = @('hapy-lib.ps1', 'hapy-ask.ps1', 'hapy-review.ps1', 'glm-task.ps1',
+    'claude-mode.ps1', 'orch-check.ps1', 'orch-status.ps1', 'orch-token.ps1', 'orch-set-token.ps1',
+    'orch-set-gateway.ps1', 'orch-update.ps1')
 
 function Get-AIRemoteVersion {
     # latest OrchVersion from the public repo; '' when unreachable/unparsed
@@ -55,7 +61,6 @@ $script:HapySecretRegex = @(
     '(?i)(password|passwd|secret|api[_-]?key|access[_-]?token)["'']?\s*[:=]\s*["''][^"''\s]{8,}',
     '(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*[A-Za-z0-9_./+=-]{10,}'
 ) -join '|'
-# NB: glm-task keeps its own $scanRegex copy of this list - update both.
 
 function Find-HapySecrets([string]$Text) {
     # returns up to 5 matched fragments, empty array when clean
@@ -71,21 +76,54 @@ function Assert-AIModelName([string]$Model) {
     }
 }
 
+function Get-AIMask([string]$Secret) {
+    # first 4 chars + stars: enough to recognize the hit, useless as a secret
+    if ($Secret.Length -le 6) { return '*' * $Secret.Length }
+    return $Secret.Substring(0, 4) + ('*' * [Math]::Min(24, $Secret.Length - 4))
+}
+
 function Show-AIMaskedHits([string[]]$Hits) {
     # print masked fragments - the raw values are secrets and must not
     # land in the transcript/console
     $n = 0
     foreach ($h in $Hits) {
         $n++
-        $mask = if ($h.Length -le 6) { '*' * $h.Length }
-                else { $h.Substring(0, 4) + ('*' * [Math]::Min(24, $h.Length - 4)) }
-        Write-Host ("  hit {0}: {1} (length {2})" -f $n, $mask, $h.Length)
+        Write-Host ("  hit {0}: {1} (length {2})" -f $n, (Get-AIMask $h), $h.Length)
     }
+}
+
+function Stop-AIProcessTree([Diagnostics.Process]$Proc) {
+    # Kill() alone stops only the top process: on Windows the native worker
+    # runs as cmd.exe -> claude.exe, and claude spawns tool shells of its own,
+    # so the real worker would keep running (and spending quota) after a
+    # timeout. taskkill /T takes the whole tree; cmd's own redirection keeps
+    # its output away from PowerShell's native-stderr handling.
+    try {
+        if ($env:OS -eq 'Windows_NT') { & $env:ComSpec /c "taskkill /T /F /PID $($Proc.Id) >nul 2>&1" }
+        else { $Proc.Kill($true) }   # pwsh 7: entire process tree
+    } catch { }
+    try { if (-not $Proc.HasExited) { $Proc.Kill() } } catch { }
+}
+
+function Get-AIRepoRoot {
+    # top of the git work tree containing the current directory ('' outside
+    # one), so commands work from any subfolder, not just the repo root
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'   # PS 5.1 turns native stderr into errors
+    try { $top = & git rev-parse --show-toplevel 2>$null } finally { $ErrorActionPreference = $prev }
+    if ($LASTEXITCODE -ne 0 -or -not $top) { return '' }
+    return [IO.Path]::GetFullPath(([string]$top).Trim())
+}
+
+function Get-AIRunId {
+    # unique per call: timestamp for humans + PID + random suffix, so parallel
+    # calls (agents fire several at once) never share temp files or snapshots
+    return '{0}-{1}-{2}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $PID, ([guid]::NewGuid().ToString('N').Substring(0, 6))
 }
 
 # ---------------------------------------------------------------- usage log
 # Every worker call appends one TSV line to ~/.claude/orch-usage.tsv
-# (see orch-status for the summary). Only sizes and counters are logged -
+# (see ai-orch status for the summary). Only sizes and counters are logged -
 # never prompt, material or answer content.
 $script:AIUsageLogPath = Join-Path $HOME '.claude/orch-usage.tsv'
 
@@ -175,6 +213,10 @@ function Send-HapyMessage {
     }
     $reader.Close(); $resp.Close()
 
+    if ($stop -eq 'max_tokens') {
+        # a cut answer looks complete to the reader - say it loudly
+        Write-Warning "answer TRUNCATED at -MaxTokens $MaxTokens - re-run with a larger -MaxTokens"
+    }
     $usage = '(tokens as reported by the gateway, may be inaccurate: {0} in / {1} out, stop: {2})' -f $inTok, $outTok, ($(if ($stop) { $stop } else { '?' }))
     return @{ Text = $sb.ToString(); Usage = $usage }
 }
@@ -269,10 +311,10 @@ function Send-CCMessage {
     $fullText = $Prompt + "`n`n---`n`n" + $Material
 
     if ($env:OS -eq 'Windows_NT') {
-        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $inFile  = Join-Path $env:TEMP "ccw-$stamp.in"
-        $outFile = Join-Path $env:TEMP "ccw-$stamp.out"
-        $errFile = Join-Path $env:TEMP "ccw-$stamp.err"
+        $runId = Get-AIRunId
+        $inFile  = Join-Path $env:TEMP "ccw-$runId.in"
+        $outFile = Join-Path $env:TEMP "ccw-$runId.out"
+        $errFile = Join-Path $env:TEMP "ccw-$runId.err"
         [IO.File]::WriteAllText($inFile, $fullText, (New-Object Text.UTF8Encoding $false))
 
         $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -294,8 +336,8 @@ function Send-CCMessage {
 
         $p = [System.Diagnostics.Process]::Start($psi)
         if (-not $p.WaitForExit($TimeoutSec * 1000)) {
-            $p.Kill()
-            throw "claude -p timeout after ${TimeoutSec}s (the worker process may still be running)"
+            Stop-AIProcessTree $p
+            throw "claude -p timeout after ${TimeoutSec}s - worker process tree killed"
         }
         $text = ''
         if (Test-Path $outFile) { $text = [IO.File]::ReadAllText($outFile, [Text.Encoding]::UTF8) }
@@ -333,8 +375,8 @@ function Send-CCMessage {
     $p.StandardInput.Write($fullText)
     $p.StandardInput.Close()
     if (-not $p.WaitForExit($TimeoutSec * 1000)) {
-        $p.Kill()
-        throw "claude -p timeout after ${TimeoutSec}s (the worker process may still be running)"
+        Stop-AIProcessTree $p
+        throw "claude -p timeout after ${TimeoutSec}s - worker process tree killed"
     }
     if ($p.ExitCode -ne 0) {
         $err = (($errTask.Result -split "`n") | Select-Object -Last 5) -join ' '

@@ -119,8 +119,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\name\ai-orchestrato
   `& "$HOME\.claude\bin\ai-orch.ps1" check`.
 - Единая точка входа — `ai-orch <подкоманда>` (справка: `ai-orch -h`):
   `ai-orch check -Live`, `ai-orch set-token`, `ai-orch set-gateway -BaseUrl …`,
-  `ai-orch update -Apply`. Прямые команды (`hapy-ask`, `glm-task`, `orch-check`…)
-  работают так же — диспетчер лишь перенаправляет.
+  `ai-orch update -Apply`. Других команд нет: скрипты подкоманд лежат в
+  `~/.claude/bin/ai-orch-lib/` вне PATH, отдельные команды версий до 1.5
+  (`hapy-ask`, `glm-task`, `orch-check`…) установщик удаляет.
 - macOS/Linux: установщик PATH не меняет — добавьте в `~/.zshrc` (или
   `~/.bashrc`) строку `export PATH="$PATH:$HOME/.claude/bin"` и при желании
   алиас `alias ai-orch='pwsh $HOME/.claude/bin/ai-orch.ps1'`
@@ -135,8 +136,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\name\ai-orchestrato
 Позже пользователь может попросить словами «проверь обновления оркестратора»
 или «обнови оркестратор». Это делается командами `ai-orch update` (сравнить
 установленную версию с GitHub) и `ai-orch update -Apply` (git pull в клоне +
-переустановка; настроенные файлы с токеном не перезаписываются); прямые
-`orch-update [-Apply]` работают так же. После обновления полезно прогнать
+переустановка; настроенные файлы с токеном не перезаписываются). После
+обновления полезно прогнать
 `ai-orch check`.
 
 Важно: `git pull` в клоне сам по себе НЕ обновляет установленные скрипты в

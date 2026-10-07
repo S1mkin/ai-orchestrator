@@ -36,7 +36,7 @@ if (-not $claude) {
         -Filter 'anthropic.claude-code-*' -ErrorAction SilentlyContinue |
         Sort-Object Name -Descending | Select-Object -First 1
     if (-not $ext) {
-        Write-Warning 'claude CLI not found: install the Claude Code CLI or the VS Code extension. glm-task and the native backend need it.'
+        Write-Warning 'claude CLI not found: install the Claude Code CLI or the VS Code extension. ai-orch task and the native backend need it.'
     }
 }
 
@@ -53,26 +53,63 @@ function Copy-UnlessConfigured([string]$from, [string]$to) {
 }
 
 New-Item -ItemType Directory -Force $binDst | Out-Null
-Copy-Item (Join-Path $src 'bin/*.ps1') $binDst -Force
+Copy-Item (Join-Path $src 'bin/ai-orch.ps1') $binDst -Force
+$libDst = Join-Path $binDst 'ai-orch-lib'
+New-Item -ItemType Directory -Force $libDst | Out-Null
+Copy-Item (Join-Path $src 'bin/ai-orch-lib/*.ps1') $libDst -Force
+# pre-1.5 installs put every script straight into bin (on PATH) as its own
+# command; ai-orch is the only command now, so remove the old ones
+. (Join-Path $src 'bin/ai-orch-lib/common.ps1')
+foreach ($old in $script:OrchLegacyScripts) {
+    $p = Join-Path $binDst $old
+    if (Test-Path $p) { Remove-Item $p -Force; "removed old command $p" }
+}
 New-Item -ItemType Directory -Force $claudeDir | Out-Null
 Copy-UnlessConfigured (Join-Path $src 'settings/settings.hapy.json') (Join-Path $claudeDir 'settings.hapy.json')
 Copy-UnlessConfigured (Join-Path $src 'settings/settings.claude.json') (Join-Path $claudeDir 'settings.claude.json')
 $live = Join-Path $claudeDir 'settings.json'
 if (-not (Test-Path $live)) {
     Copy-Item (Join-Path $src 'settings/settings.hapy.json') $live -Force
-    "seeded ~/.claude/settings.json from the hapy variant (claude-mode switches it later)"
+    "seeded ~/.claude/settings.json from the hapy variant (ai-orch mode switches it later)"
 }
 $glmDst = Join-Path $HomeDir '.claude-glm'
 New-Item -ItemType Directory -Force $glmDst | Out-Null
 Copy-UnlessConfigured (Join-Path $src 'profiles/glm/settings.json') (Join-Path $glmDst 'settings.json')
+# profile template text; the path-guard hook runs under Windows PowerShell on
+# Windows and under pwsh 7 elsewhere
+function Get-ProfileTemplate([string]$name) {
+    $t = Get-Content (Join-Path $src "profiles/$name/settings.json") -Raw -Encoding UTF8
+    if (-not $isWin) { $t = $t.Replace('"powershell -NoProfile', '"pwsh -NoProfile') }
+    return $t
+}
+# a configured profile is kept for its env (gateway URL + token), but its
+# permissions and hooks are the worker's walls and must follow the repo -
+# refresh just those keys, so tightened walls reach existing installs too
+$glmSettings = Join-Path $glmDst 'settings.json'
+$tplJson = (Get-ProfileTemplate 'glm') | ConvertFrom-Json
+$curJson = Get-Content $glmSettings -Raw -Encoding UTF8 | ConvertFrom-Json
+$changed = $false
+foreach ($key in @('permissions', 'hooks')) {
+    if (($curJson.$key | ConvertTo-Json -Depth 10) -ne ($tplJson.$key | ConvertTo-Json -Depth 10)) {
+        $curJson | Add-Member -NotePropertyName $key -NotePropertyValue $tplJson.$key -Force
+        $changed = $true
+    }
+}
+if ($changed) {
+    [IO.File]::WriteAllText($glmSettings, ($curJson | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
+    "refreshed worker permissions + hooks in $glmSettings (env kept)"
+}
+Copy-Item (Join-Path $src 'profiles/guard-paths.ps1') $glmDst -Force
 Copy-Item (Join-Path $src 'profiles/glm/CLAUDE.md') $glmDst -Force
 New-Item -ItemType Directory -Force (Join-Path $glmDst 'prompts') | Out-Null
 Copy-Item (Join-Path $src 'profiles/glm/prompts/*.txt') (Join-Path $glmDst 'prompts') -Force
 $workerDst = Join-Path $HomeDir '.claude-worker'
 New-Item -ItemType Directory -Force $workerDst | Out-Null
-Copy-Item (Join-Path $src 'profiles/worker/settings.json') $workerDst -Force
+[IO.File]::WriteAllText((Join-Path $workerDst 'settings.json'), (Get-ProfileTemplate 'worker'),
+    (New-Object Text.UTF8Encoding $false))
+Copy-Item (Join-Path $src 'profiles/guard-paths.ps1') $workerDst -Force
 Copy-Item (Join-Path $src 'profiles/worker/CLAUDE.md') $workerDst -Force
-# remember where the clone lives, so orch-update -Apply can pull+reinstall
+# remember where the clone lives, so ai-orch update -Apply can pull+reinstall
 [IO.File]::WriteAllText((Join-Path $claudeDir 'orch-clone-path'), ($src + "`n"),
     (New-Object Text.UTF8Encoding $false))
 
@@ -164,7 +201,7 @@ elseif ($NoToken -and $BaseUrl) {
 # ---------------------------------------------------------------- summary
 ''
 'installed:'
-"  scripts : $binDst  (ai-orch + claude-mode, hapy-ask, hapy-review, glm-task, orch-check, orch-status, orch-set-token, orch-set-gateway, orch-update)"
+"  command : $binDst/ai-orch.ps1  (subcommands in $libDst)"
 "  clone   : $src (recorded for ai-orch update -Apply)"
 "  profiles: $glmDst (gateway worker)"
 "            $workerDst (native worker)"

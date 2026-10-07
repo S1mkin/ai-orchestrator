@@ -1,24 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Read",
-      "Grep",
-      "Glob",
-      "Bash(ls *)",
-      "Bash(cat *)",
-      "Bash(head *)",
-      "Bash(tail *)",
-      "Bash(grep *)",
-      "Bash(rg *)",
-      "Bash(find *)",
-      "Bash(wc *)",
       "Bash(git status*)",
       "Bash(git log*)",
       "Bash(git show*)",
-      "Bash(git diff*)",
       "Bash(git grep*)"
     ],
     "deny": [
+      "Read(~/.ssh/**)",
+      "Read(~/.claude/**)",
+      "Read(~/.claude-glm/settings.json)",
+      "Read(~/.claude-worker/.credentials.json)",
+      "Read(~/.claude-worker/.claude.json)",
+      "WebFetch",
+      "WebSearch",
       "Bash(git push*)",
       "Bash(git commit*)",
       "Bash(git checkout*)",
@@ -26,6 +21,7 @@
       "Bash(git rebase*)",
       "Bash(git merge*)",
       "Bash(git clean*)",
+      "Bash(git diff --no-index*)",
       "Bash(rm *)",
       "Bash(curl *)",
       "Bash(wget *)",
@@ -37,6 +33,20 @@
       "Write(**/CLAUDE.md)",
       "Edit(**/AGENTS.md)",
       "Write(**/AGENTS.md)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|NotebookRead|LS",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"$CLAUDE_CONFIG_DIR/guard-paths.ps1\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   }
 }

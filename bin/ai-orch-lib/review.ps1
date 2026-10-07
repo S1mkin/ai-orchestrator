@@ -1,4 +1,4 @@
-# hapy-review - opponent review of a spec and/or a git diff.
+# ai-orch review - opponent review of a spec and/or a git diff.
 # Role: opponent (a model other than the code writer). Prompt in
 # ~/.claude-glm/prompts/opponent.txt.
 # Backend 'auto': gateway when configured, else native claude -p (subscription).
@@ -8,11 +8,11 @@
 #               cross-vendor one - prefer the gateway for review.
 #               (MiniMax-M3 is avoided here: it leaks <think> into answers.)
 #
-#   hapy-review -Spec docs/plan.md                       # spec file (or literal text)
-#   hapy-review -Diff --cached                           # staged changes
-#   hapy-review -Diff HEAD~1..HEAD                        # last commit
-#   hapy-review -Spec docs/plan.md -Diff --cached         # spec vs its implementation
-#   hapy-review -Diff --cached -Backend claude            # native opponent
+#   ai-orch review -Spec docs/plan.md                       # spec file (or literal text)
+#   ai-orch review -Diff --cached                           # staged changes
+#   ai-orch review -Diff HEAD~1..HEAD                        # last commit
+#   ai-orch review -Spec docs/plan.md -Diff --cached         # spec vs its implementation
+#   ai-orch review -Diff --cached -Backend claude            # native opponent
 param(
     [string]$Spec,
     [string]$Diff = '',
@@ -23,7 +23,7 @@ param(
     [int]$MaxTokens = 3000,      # gateway only
     [int]$TimeoutSec = 600
 )
-. (Join-Path $PSScriptRoot 'hapy-lib.ps1')
+. (Join-Path $PSScriptRoot 'common.ps1')
 $ErrorActionPreference = 'Stop'
 
 if (-not $Spec -and -not $Diff) {
@@ -45,7 +45,7 @@ if ($Spec) {
     }
 }
 if ($Diff) {
-    if (-not (Test-Path '.git')) { Write-Error 'not a git repository, but -Diff was requested' }
+    if (-not (Get-AIRepoRoot)) { Write-Error 'not inside a git repository, but -Diff was requested' }
     # the diff goes through a file, not the pipeline: on PS 5.1 Out-String
     # decodes native output with the console codepage and mangles non-ASCII
     $tmpDiff = Join-Path ([IO.Path]::GetTempPath()) "aireview-diff-$PID.tmp"

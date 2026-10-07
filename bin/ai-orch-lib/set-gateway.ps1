@@ -1,14 +1,14 @@
-# orch-set-gateway - set the gateway base URL in every file it lives in:
+# ai-orch set-gateway - set the gateway base URL in every file it lives in:
 # ~/.claude/settings.hapy.json, the live ~/.claude/settings.json and
 # ~/.claude-glm/settings.json. Files without the env key are skipped.
 # The address is NOT a secret: unlike the token it may come from a chat with
 # the agent, a script or CI - so the plain -BaseUrl parameter is the norm and
 # agents may run this command themselves.
-# (The token has its own command: orch-set-token, interactive by default.)
+# (The token has its own command: ai-orch set-token, interactive by default.)
 #
-#   orch-set-gateway -BaseUrl https://gw.example   # non-interactive (agents ok)
-#   orch-set-gateway                               # prompts in this terminal
-#   orch-set-gateway -HomeDir C:\temp\fakehome ... # test placement
+#   ai-orch set-gateway -BaseUrl https://gw.example   # non-interactive (agents ok)
+#   ai-orch set-gateway                               # prompts in this terminal
+#   ai-orch set-gateway -HomeDir C:\temp\fakehome ... # test placement
 param(
     [string]$BaseUrl = '',
     [string]$HomeDir = ''
@@ -50,7 +50,7 @@ foreach ($f in $files) {
 }
 "gateway URL now: $BaseUrl"
 $leftUrl = @($files | Where-Object { (Test-Path $_) -and ((Get-Content $_ -Raw -Encoding UTF8) -match '__HAPY_BASE_URL__') })
-if ($leftUrl) { Write-Warning "URL placeholders remain in: $($leftUrl -join ', ') - orch-check will flag them" }
+if ($leftUrl) { Write-Warning "URL placeholders remain in: $($leftUrl -join ', ') - ai-orch check will flag them" }
 $leftTok = @($files | Where-Object { (Test-Path $_) -and ((Get-Content $_ -Raw -Encoding UTF8) -match '__HAPY_TOKEN__') })
 if ($leftTok) { 'hint: token placeholder remains - ai-orch set-token (run it in your own terminal)' }
 'verify: ai-orch check -Live'

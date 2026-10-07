@@ -1,13 +1,13 @@
-# glm-task - run an external worker session against a snapshot of the current
+# ai-orch task - run an external worker session against a snapshot of the current
 # git repo, in an isolated Claude Code profile. Backends:
 #   gateway - hapy models (glm/grok/...), profile ~/.claude-glm; default when
 #             settings.hapy.json carries gateway env (paid by the group wallet)
 #   claude  - native Claude on the subscription, profile ~/.claude-worker
 #             (a copy of the login; the gateway token is never in this profile)
 #
-#   glm-task scout "<task>" [-Model auto] [-MaxTurns 40]     read-only recon
-#   glm-task start "<task>" [-Model auto]                    edits -> patch file
-#   glm-task scout "<task>" -Backend claude                  force native
+#   ai-orch task scout "<task>" [-Model auto] [-MaxTurns 40]     read-only recon
+#   ai-orch task start "<task>" [-Model auto]                    edits -> patch file
+#   ai-orch task scout "<task>" -Backend claude                  force native
 # Model 'auto': gateway -> glm-5.3; native -> haiku (scout) / sonnet (start).
 #
 # Safety layers (no OS sandbox - these are the walls):
@@ -35,12 +35,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'hapy-lib.ps1')
+. (Join-Path $PSScriptRoot 'common.ps1')
 
 # ---------------------------------------------------------------- locate things
-$repo = (Get-Location).Path
-if (-not (Test-Path (Join-Path $repo '.git'))) {
-    Write-Error "not a git repository: $repo"
+$repo = Get-AIRepoRoot
+if (-not $repo) {
+    Write-Error "not inside a git repository: $((Get-Location).Path)"
 }
 $backend = Get-AIBackend $Backend
 if ($Model -eq 'auto') {
@@ -59,7 +59,7 @@ if (-not (Test-Path (Join-Path $profileDir 'settings.json'))) {
 
 # ---------------------------------------------------------------- snapshot
 $name = Split-Path $repo -Leaf
-$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$stamp = Get-AIRunId
 $snap = Join-Path $profileDir "snapshots/$name-$stamp"
 $patches = Join-Path $profileDir 'patches'
 New-Item -ItemType Directory -Force -Path $snap, $patches | Out-Null
@@ -87,23 +87,6 @@ Get-ChildItem $snap -Recurse -File -Force | Where-Object {
 }
 
 Write-Host '[3/5] scanning snapshot for secret-looking content (abort on any hit)'
-# keep in sync with $script:HapySecretRegex in hapy-lib.ps1
-$scanRegex = @(
-    'sk-ant-[A-Za-z0-9_-]{10,}',
-    'sk-[A-Za-z0-9]{20,}',
-    'AKIA[0-9A-Z]{16}',
-    'AIza[0-9A-Za-z_-]{30,}',
-    '-----BEGIN [A-Z ]*PRIVATE KEY-----',
-    'eyJ[A-Za-z0-9_-]{30,}\.',
-    'hapy_[A-Za-z0-9_]{20,}',
-    'gho_[A-Za-z0-9]{30,}',
-    'ghp_[A-Za-z0-9]{30,}',
-    'xox[bpars]-[A-Za-z0-9-]{10,}',
-    'glpat-[A-Za-z0-9_-]{15,}',
-    'sk_live_[A-Za-z0-9]{20,}',
-    '(?i)(password|passwd|secret|api[_-]?key|access[_-]?token)["'']?\s*[:=]\s*["''][^"''\s]{8,}',
-    '(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*[A-Za-z0-9_./+=-]{10,}'
-) -join '|'
 $skipExt = @('.png', '.jpg', '.jpeg', '.gif', '.ico', '.webp', '.woff', '.woff2',
     '.ttf', '.eot', '.otf', '.zip', '.gz', '.tar', '.mp4', '.mp3', '.pdf', '.exe', '.dll')
 # Official-distribution subtrees (public code, floods false positives):
@@ -119,16 +102,14 @@ $scanFiles = Get-ChildItem $snap -Recurse -File | Where-Object {
     return $true
 }
 $hits = @()
-if ($scanFiles) { $hits = Select-String -Path $scanFiles.FullName -Pattern $scanRegex -AllMatches }
+if ($scanFiles) { $hits = Select-String -Path $scanFiles.FullName -Pattern $script:HapySecretRegex -AllMatches }
 if ($hits) {
     Write-Host 'ABORT - secret-like content found, the worker will not run:' -ForegroundColor Red
     foreach ($h in ($hits | Select-Object -First 15)) {
         # mask the matched fragment: the raw line may contain the secret itself
         $frag = $h.Matches[0].Value
-        $mask = if ($frag.Length -le 6) { '*' * $frag.Length }
-                else { $frag.Substring(0, 4) + ('*' * [Math]::Min(24, $frag.Length - 4)) }
         Write-Host ("  {0}:{1}: matched {2} (length {3})" -f `
-            $h.Path.Substring($snap.Length + 1), $h.LineNumber, $mask, $frag.Length)
+            $h.Path.Substring($snap.Length + 1), $h.LineNumber, (Get-AIMask $frag), $frag.Length)
     }
     Remove-Item $snap -Recurse -Force
     Write-Error 'aborted: review the hits, fix or extend the scrub list, retry'
@@ -153,6 +134,10 @@ $psi.FileName = $claudeExe
 $psi.Arguments = $argLine
 $psi.WorkingDirectory = $snap
 $psi.UseShellExecute = $false
+# stdin is redirected and closed right after start: claude -p reads a piped
+# stdin to EOF before working, and an inherited open pipe (background job,
+# a calling agent) would hang the worker until the timeout
+$psi.RedirectStandardInput = $true
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
 # explicit UTF-8: PS 5.1/.NET Framework would otherwise decode the pipes with
@@ -168,12 +153,13 @@ $psi.EnvironmentVariables['LANG'] = 'en_US.UTF-8'
 $psi.EnvironmentVariables['CLAUDE_CONFIG_DIR'] = $profileDir
 
 $p = [System.Diagnostics.Process]::Start($psi)
+$p.StandardInput.Close()
 # both pipes are read asynchronously: a full stdout pipe would block the
 # worker while WaitForExit waits for the worker - a deadlock on long answers
 $stdoutTask = $p.StandardOutput.ReadToEndAsync()
 $stderrTask = $p.StandardError.ReadToEndAsync()
 if (-not $p.WaitForExit($TimeoutSec * 1000)) {
-    $p.Kill()
+    Stop-AIProcessTree $p
     Write-Error "timeout after ${TimeoutSec}s - worker killed, snapshot kept: $snap"
 }
 $answer = $stdoutTask.Result
@@ -212,4 +198,8 @@ if ($Mode -eq 'start') {
 Write-Host "snapshot: $snap (kept for inspection; delete when done)"
 $usageNote = "files=$(@($scanFiles).Count)"
 if ($answerHits) { $usageNote += ',answer-redacted' }
+if ($p.ExitCode -ne 0) { $usageNote += ",exit=$($p.ExitCode)" }
 Write-AIUsageLog $Mode $Model $backend $Task.Length -Note $usageNote
+# a failed worker must fail the command too - the caller is often an agent
+# that only sees the exit code
+if ($p.ExitCode -ne 0) { exit 1 }

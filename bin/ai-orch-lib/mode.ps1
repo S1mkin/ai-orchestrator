@@ -1,4 +1,4 @@
-# claude-mode — switch Claude Code backend between the hapy gateway and
+# ai-orch mode — switch Claude Code backend between the hapy gateway and
 # built-in Anthropic models, by swapping ~/.claude/settings.json with one
 # of the prepared variants (settings.hapy.json / settings.claude.json).
 # After switching, reload the VS Code window (env is read at startup).
@@ -12,7 +12,7 @@ $dir = Join-Path $HOME '.claude'
 $live = Join-Path $dir 'settings.json'
 
 if ($Mode -eq 'help' -or $Mode -eq '') {
-    "Usage: claude-mode [hapy | claude | status]"
+    "Usage: ai-orch mode [hapy | claude | status]"
     "  hapy    - gateway models (glm / grok / minimax)"
     "  claude  - built-in Claude models (needs claude.ai login)"
     "  status  - show the current mode"

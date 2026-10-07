@@ -1,15 +1,15 @@
-# hapy-ask - digest of files / text / stdin via the gateway or native claude.
+# ai-orch ask - digest of files / text / stdin via the gateway or native claude.
 # Role: digest. Prompt in ~/.claude-glm/prompts/digest.txt.
 # Backend 'auto': gateway (settings.hapy.json env) when configured, else native
 # claude -p on the subscription (~/.claude-worker). Model 'auto':
 # gateway -> glm-5.3-flash (light tier: summarize, fast, nearly free),
 # native -> haiku.
 #
-#   hapy-ask wiki/workflow.md
-#   hapy-ask file1.html file2.php
-#   hapy-ask -Text "long transcript ..."
-#   hapy-ask -Backend claude wiki/workflow.md      # force native
-#   Get-Content dump.log | hapy-ask
+#   ai-orch ask wiki/workflow.md
+#   ai-orch ask file1.html file2.php
+#   ai-orch ask -Text "long transcript ..."
+#   ai-orch ask -Backend claude wiki/workflow.md      # force native
+#   Get-Content dump.log | ai-orch ask
 param(
     [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
     [string[]]$Paths,
@@ -18,10 +18,10 @@ param(
     [string]$Model = 'auto',
     [ValidateSet('auto', 'gateway', 'claude')]
     [string]$Backend = 'auto',
-    [int]$MaxTokens = 2000,      # gateway only
+    [int]$MaxTokens = 4000,      # gateway only; 2000 cut 40-line Russian digests
     [int]$TimeoutSec = 300
 )
-. (Join-Path $PSScriptRoot 'hapy-lib.ps1')
+. (Join-Path $PSScriptRoot 'common.ps1')
 $ErrorActionPreference = 'Stop'
 
 if (-not $Paths -and -not $Text) { $Text = ($input | Out-String -Width 4096) }

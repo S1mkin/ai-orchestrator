@@ -1,13 +1,13 @@
-# orch-update - check for orchestrator updates and (with -Apply) install them.
-# Local version comes from hapy-lib.ps1 ($script:OrchVersion), remote from the
+# ai-orch update - check for orchestrator updates and (with -Apply) install them.
+# Local version comes from common.ps1 ($script:OrchVersion), remote from the
 # same line on GitHub. install.ps1 records the clone path, so -Apply can pull
 # and re-run the installer by itself (configured files are never touched).
 #
-#   orch-update            # local vs GitHub version, changes nothing
-#   orch-update -Apply     # git pull --ff-only + install.ps1 -NoToken + hint
+#   ai-orch update            # local vs GitHub version, changes nothing
+#   ai-orch update -Apply     # git pull --ff-only + install.ps1 -NoToken + hint
 param([switch]$Apply)
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'hapy-lib.ps1')
+. (Join-Path $PSScriptRoot 'common.ps1')
 
 $cloneFile = Join-Path $HOME '.claude/orch-clone-path'
 $clone = ''
@@ -27,7 +27,7 @@ else {
 
 if (-not $Apply) {
     if ($updateAvailable) {
-        if ($clone -and (Test-Path $clone)) { 'to apply: ai-orch update -Apply (or orch-update -Apply)' }
+        if ($clone -and (Test-Path $clone)) { 'to apply: ai-orch update -Apply' }
         else { 'to apply: run install.ps1 from your clone again (it records the path), then ai-orch update -Apply' }
     }
     return
