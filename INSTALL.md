@@ -128,7 +128,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\name\ai-orchestrato
   (согласуйте с пользователем; без алиаса из zsh/bash диспетчер запускается
   только так: `pwsh ~/.claude/bin/ai-orch.ps1 …`).
 - Основная сессия Claude Code не переключалась: чтобы вести и её через шлюз —
-  `ai-orch mode hapy` + Reload Window (необязательно).
+  `ai-orch mode hapy` + Reload Window (необязательно, глобально); для одного
+  проекта — `ai-orch mode hapy -Project` из его каталога.
+- Установщик вписал правила делегирования в `~/.claude/CLAUDE.md`: основная
+  сессия теперь сама отправляет рутину (большие файлы, разведку, черновики
+  правок, ревью) в воркеры `ai-orch`. Проверка: строка `delegation rules`
+  в `ai-orch check`.
 - Ничего не коммитьте в клон репозитория.
 
 ## 5. Обновления

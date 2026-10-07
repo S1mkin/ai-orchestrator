@@ -67,6 +67,29 @@ foreach ($old in $script:OrchLegacyScripts) {
 New-Item -ItemType Directory -Force $claudeDir | Out-Null
 Copy-UnlessConfigured (Join-Path $src 'settings/settings.hapy.json') (Join-Path $claudeDir 'settings.hapy.json')
 Copy-UnlessConfigured (Join-Path $src 'settings/settings.claude.json') (Join-Path $claudeDir 'settings.claude.json')
+# the sonnet/opus alias remaps must reach an ALREADY configured hapy variant
+# too (Copy-UnlessConfigured keeps it as-is): without them, subagents that
+# ask for sonnet/opus send Claude model names to the gateway and fail. Keys
+# are added only when missing - a hand-picked mapping is never overwritten.
+$hapyVariant = Join-Path $claudeDir 'settings.hapy.json'
+if (Test-Path $hapyVariant) {
+    $hj = Get-Content $hapyVariant -Raw -Encoding UTF8 | ConvertFrom-Json
+    $aliases = @{ ANTHROPIC_DEFAULT_SONNET_MODEL = 'glm-5.3'; ANTHROPIC_DEFAULT_OPUS_MODEL = 'grok-4.7' }
+    $aliasAdded = $false
+    if ($hj.env) {
+        foreach ($k in $aliases.Keys) {
+            if (-not $hj.env.PSObject.Properties[$k]) {
+                $hj.env | Add-Member -NotePropertyName $k -NotePropertyValue $aliases[$k]
+                $aliasAdded = $true
+            }
+        }
+    }
+    if ($aliasAdded) {
+        [IO.File]::WriteAllText($hapyVariant, ($hj | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
+        "added model alias remaps (sonnet -> glm-5.3, opus -> grok-4.7) to $hapyVariant"
+        "run 'ai-orch mode hapy' to refresh the live settings.json, then reload the VS Code window"
+    }
+}
 $live = Join-Path $claudeDir 'settings.json'
 if (-not (Test-Path $live)) {
     Copy-Item (Join-Path $src 'settings/settings.hapy.json') $live -Force
@@ -109,6 +132,33 @@ New-Item -ItemType Directory -Force $workerDst | Out-Null
     (New-Object Text.UTF8Encoding $false))
 Copy-Item (Join-Path $src 'profiles/guard-paths.ps1') $workerDst -Force
 Copy-Item (Join-Path $src 'profiles/worker/CLAUDE.md') $workerDst -Force
+# ---------------------------------------------------------------- delegation rules
+# rules of engagement for the MAIN session: Claude Code does not know ai-orch
+# exists, so without these it never delegates and everything stays on the
+# expensive model. A managed block inside markers, so text the user wrote in
+# ~/.claude/CLAUDE.md survives re-runs (that file is the user's, not ours).
+$memF = Join-Path $claudeDir 'CLAUDE.md'
+$rulesBlock = (Get-Content (Join-Path $src 'profiles/delegation-rules.md') -Raw -Encoding UTF8).TrimEnd()
+$beginTag = '<!-- ai-orch:delegation-begin'
+$endTag = 'ai-orch:delegation-end -->'
+$memExisting = if (Test-Path $memF) { Get-Content $memF -Raw -Encoding UTF8 } else { '' }
+$bi = $memExisting.IndexOf($beginTag)
+if ($bi -ge 0 -and $memExisting.IndexOf($endTag, $bi) -ge 0) {
+    # plain IndexOf splicing, not -replace: the block text must not run through
+    # regex replacement semantics ($ chars would be read as group references)
+    $ei = $memExisting.IndexOf($endTag, $bi) + $endTag.Length
+    $memNew = $memExisting.Substring(0, $bi) + $rulesBlock + $memExisting.Substring($ei)
+    if ($memNew -cne $memExisting) {
+        [IO.File]::WriteAllText($memF, $memNew, (New-Object Text.UTF8Encoding $false))
+        "updated delegation rules block in $memF"
+    }
+    else { "delegation rules already current in $memF" }
+}
+else {
+    $sep = if ($memExisting -eq '' -or $memExisting.EndsWith("`n")) { '' } else { "`r`n" }
+    [IO.File]::WriteAllText($memF, $memExisting + $sep + $rulesBlock + "`r`n", (New-Object Text.UTF8Encoding $false))
+    "placed delegation rules into $memF"
+}
 # remember where the clone lives, so ai-orch update -Apply can pull+reinstall
 [IO.File]::WriteAllText((Join-Path $claudeDir 'orch-clone-path'), ($src + "`n"),
     (New-Object Text.UTF8Encoding $false))

@@ -3,7 +3,9 @@
     "ANTHROPIC_BASE_URL": "__HAPY_BASE_URL__",
     "ANTHROPIC_AUTH_TOKEN": "__HAPY_TOKEN__",
     "ANTHROPIC_MODEL": "glm-5.3",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5.3"
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5.3",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.3",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "grok-4.7"
   },
   "modelPicker": {
     "replaceBuiltInOptions": true,

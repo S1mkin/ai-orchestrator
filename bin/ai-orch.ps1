@@ -23,7 +23,7 @@
 #   ai-orch ask ...                # digest: files, -Text, stdin
 #   ai-orch review ...             # opponent: -Spec, -Diff
 #   ai-orch task ...               # scout/start workers
-#   ai-orch mode hapy|claude|status
+#   ai-orch mode hapy|claude|status [-Project]
 $ErrorActionPreference = 'Stop'
 $lib = Join-Path $PSScriptRoot 'ai-orch-lib'
 . (Join-Path $lib 'common.ps1')
@@ -52,7 +52,7 @@ function Show-OrchHelp {
     '  ask ...                  digest worker         (files, -Text, stdin)'
     '  review ...               opponent review       (-Spec, -Diff)'
     '  task scout|start "..."   recon / draft patch workers'
-    '  mode hapy|claude|status  main-session backend'
+    '  mode hapy|claude|status  main-session backend, global or (-Project) one project'
     ''
     'the subcommand is a bare word: PowerShell has no -update/--update flags;'
     'options after the subcommand belong to that subcommand'

@@ -74,6 +74,13 @@ if (Test-Path $liveF) {
     else { Info 'main session: built-in Claude mode' }
 }
 else { Info 'main session: no live settings.json yet' }
+# delegation rules make the main session use the workers at all; not a FAIL -
+# removing them on purpose is legitimate
+$memF = Join-Path $HOME '.claude/CLAUDE.md'
+if ((Test-Path $memF) -and ((Get-Content $memF -Raw -Encoding UTF8) -match 'ai-orch:delegation-begin')) {
+    Ok 'delegation rules: installed in ~/.claude/CLAUDE.md'
+}
+else { Info 'delegation rules: not in ~/.claude/CLAUDE.md (re-run install.ps1 so the main session starts delegating)' }
 
 # ---------------------------------------------------------------- worker profiles
 Write-Host 'worker profiles'
