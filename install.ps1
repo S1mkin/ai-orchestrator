@@ -3,7 +3,8 @@
 #
 #   git clone <repo url> ; cd ai-orchestrator ; .\install.ps1
 #   .\install.ps1 -Token hapy_xxx -BaseUrl https://gw.example   # non-interactive
-#   .\install.ps1 -NoToken                                      # native backend only
+#   .\install.ps1 -NoToken                                      # no gateway / token later
+#   .\install.ps1 -NoToken -BaseUrl https://gw.example          # URL now, token via orch-token
 #   .\install.ps1 -HomeDir C:\temp\home                         # dry-run placement (skips PATH)
 #
 # Safe to re-run: files that are already configured (no __HAPY_* placeholders
@@ -95,15 +96,15 @@ else {
 # non-interactive params work in a dry-run too; the interactive prompts only
 # run for the real home directory
 $interactiveOk = (-not $dryRun)
+$targets = @(
+    (Join-Path $claudeDir 'settings.hapy.json'),
+    (Join-Path $glmDst 'settings.json'),
+    $live
+)
 if (-not $NoToken -and ($interactiveOk -or ($Token -and $BaseUrl))) {
     if (-not $BaseUrl -and $interactiveOk) { $BaseUrl = Read-Host 'gateway base URL (https://..., empty to skip)' }
     if (-not $Token -and $interactiveOk)   { $Token = Read-Host 'gateway token (hapy_..., empty to skip)' }
     if ($BaseUrl -and $Token) {
-        $targets = @(
-            (Join-Path $claudeDir 'settings.hapy.json'),
-            (Join-Path $glmDst 'settings.json'),
-            $live
-        )
         foreach ($f in $targets) {
             if ((Test-Path $f) -and ((Get-Content $f -Raw -Encoding UTF8) -match '__HAPY_')) {
                 # .Replace() (not -replace): the replacement side of -replace
@@ -117,6 +118,20 @@ if (-not $NoToken -and ($interactiveOk -or ($Token -and $BaseUrl))) {
     else {
         Write-Warning 'no URL/token given: the gateway backend stays disabled until you replace __HAPY_BASE_URL__ / __HAPY_TOKEN__ by hand'
     }
+}
+elseif ($NoToken -and $BaseUrl) {
+    # the address is not a secret: an agent may collect it in chat and pass it
+    # here; the token placeholder stays for orch-token (interactive entry)
+    if ($BaseUrl -notmatch '^https?://[A-Za-z0-9._:/-]+$') {
+        Write-Error "base URL rejected (unexpected characters): $BaseUrl"
+    }
+    foreach ($f in $targets) {
+        if ((Test-Path $f) -and ((Get-Content $f -Raw -Encoding UTF8) -match '__HAPY_BASE_URL__')) {
+            $new = (Get-Content $f -Raw -Encoding UTF8).Replace('__HAPY_BASE_URL__', $BaseUrl)
+            [IO.File]::WriteAllText($f, $new, (New-Object Text.UTF8Encoding $false))
+        }
+    }
+    'gateway URL installed (token placeholder left for orch-token)'
 }
 
 # ---------------------------------------------------------------- summary
