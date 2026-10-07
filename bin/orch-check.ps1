@@ -23,7 +23,7 @@ function Mask-Token([string]$t) {
 Write-Host 'scripts'
 Info "version: $script:OrchVersion (check for updates: orch-update)"
 $bin = $PSScriptRoot
-foreach ($s in @('hapy-lib.ps1', 'hapy-ask.ps1', 'hapy-review.ps1', 'glm-task.ps1',
+foreach ($s in @('ai-orch.ps1', 'hapy-lib.ps1', 'hapy-ask.ps1', 'hapy-review.ps1', 'glm-task.ps1',
                  'claude-mode.ps1', 'orch-token.ps1', 'orch-set-token.ps1', 'orch-set-gateway.ps1',
                  'orch-status.ps1', 'orch-update.ps1')) {
     if (Test-Path (Join-Path $bin $s)) { Ok $s } else { Bad "missing: $(Join-Path $bin $s)" }

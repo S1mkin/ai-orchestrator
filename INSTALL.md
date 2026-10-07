@@ -114,6 +114,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\name\ai-orchestrato
   полностью закройте ВСЕ окна VS Code и запустите его заново (Reload Window не
   перезапускает процесс), либо зовите по полному пути:
   `& "$HOME\.claude\bin\orch-check.ps1"`.
+- Единая точка входа — `ai-orch <подкоманда>` (справка: `ai-orch -h`):
+  `ai-orch check -Live`, `ai-orch set-token`, `ai-orch set-gateway -BaseUrl …`,
+  `ai-orch update -Apply`. Прямые команды (`hapy-ask`, `glm-task`, `orch-check`…)
+  работают так же — диспетчер лишь перенаправляет.
 - macOS/Linux: установщик PATH не меняет — добавьте в `~/.zshrc` (или
   `~/.bashrc`) строку `export PATH="$PATH:$HOME/.claude/bin"` и при желании
   алиасы вида `alias hapy-ask='pwsh $HOME/.claude/bin/hapy-ask.ps1'`
