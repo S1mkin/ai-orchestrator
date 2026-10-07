@@ -4,7 +4,7 @@
 #   git clone <repo url> ; cd ai-orchestrator ; .\install.ps1
 #   .\install.ps1 -Token hapy_xxx -BaseUrl https://gw.example   # non-interactive
 #   .\install.ps1 -NoToken                                      # no gateway / token later
-#   .\install.ps1 -NoToken -BaseUrl https://gw.example          # URL now, token via orch-token
+#   .\install.ps1 -NoToken -BaseUrl https://gw.example          # URL now, token via ai-orch set-token
 #   .\install.ps1 -HomeDir C:\temp\home                         # dry-run placement (skips PATH)
 #
 # Safe to re-run: files that are already configured (no __HAPY_* placeholders
@@ -148,7 +148,7 @@ if (-not $NoToken -and ($interactiveOk -or ($Token -and $BaseUrl))) {
 }
 elseif ($NoToken -and $BaseUrl) {
     # the address is not a secret: an agent may collect it in chat and pass it
-    # here; the token placeholder stays for orch-token (interactive entry)
+    # here; the token placeholder stays for ai-orch set-token (interactive entry)
     if ($BaseUrl -notmatch '^https?://[A-Za-z0-9._:/-]+$') {
         Write-Error "base URL rejected (unexpected characters): $BaseUrl"
     }
@@ -158,20 +158,20 @@ elseif ($NoToken -and $BaseUrl) {
             [IO.File]::WriteAllText($f, $new, (New-Object Text.UTF8Encoding $false))
         }
     }
-    'gateway URL installed (token placeholder left for orch-token)'
+    'gateway URL installed (token placeholder left for ai-orch set-token)'
 }
 
 # ---------------------------------------------------------------- summary
 ''
 'installed:'
 "  scripts : $binDst  (ai-orch + claude-mode, hapy-ask, hapy-review, glm-task, orch-check, orch-status, orch-set-token, orch-set-gateway, orch-update)"
-"  clone   : $src (recorded for orch-update -Apply)"
+"  clone   : $src (recorded for ai-orch update -Apply)"
 "  profiles: $glmDst (gateway worker)"
 "            $workerDst (native worker)"
 "  variants: $claudeDir/settings.hapy.json, settings.claude.json"
 if (-not $dryRun) {
     'next:'
-    '  1. open a NEW terminal, run: orch-check'
-    '  2. gateway:  hapy-ask README.md          (needs URL + token)'
-    '  3. native:   run "claude" once and /login (subscription), then: glm-task scout "test" -Backend claude -MaxTurns 5'
+    '  1. open a NEW terminal, run: ai-orch check'
+    '  2. gateway:  ai-orch ask README.md       (needs URL + token)'
+    '  3. native:   run "claude" once and /login (subscription), then: ai-orch task scout "test" -Backend claude -MaxTurns 5'
 }

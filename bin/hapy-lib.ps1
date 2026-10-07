@@ -6,7 +6,7 @@
 
 # orchestrator version (bump on every released change; orch-update compares
 # this against the same line on GitHub)
-$script:OrchVersion = '1.4.1'
+$script:OrchVersion = '1.4.2'
 $script:OrchRepoRaw = 'https://raw.githubusercontent.com/S1mkin/ai-orchestrator/main/bin/hapy-lib.ps1'
 
 function Get-AIRemoteVersion {
