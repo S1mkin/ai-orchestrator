@@ -24,7 +24,8 @@ Write-Host 'scripts'
 Info "version: $script:OrchVersion (check for updates: orch-update)"
 $bin = $PSScriptRoot
 foreach ($s in @('hapy-lib.ps1', 'hapy-ask.ps1', 'hapy-review.ps1', 'glm-task.ps1',
-                 'claude-mode.ps1', 'orch-token.ps1', 'orch-status.ps1', 'orch-update.ps1')) {
+                 'claude-mode.ps1', 'orch-token.ps1', 'orch-set-token.ps1', 'orch-set-gateway.ps1',
+                 'orch-status.ps1', 'orch-update.ps1')) {
     if (Test-Path (Join-Path $bin $s)) { Ok $s } else { Bad "missing: $(Join-Path $bin $s)" }
 }
 $isWin = ($env:OS -eq 'Windows_NT')
@@ -54,7 +55,7 @@ foreach ($f in @($hapyF, $glmF)) {
     $j = Get-Content $f -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $j.env.ANTHROPIC_AUTH_TOKEN) { Info "$f has no gateway env"; continue }
     if ($j.env.ANTHROPIC_AUTH_TOKEN -match '^__' -or $j.env.ANTHROPIC_BASE_URL -match '^__') {
-        Bad "$f still has __HAPY_* placeholders - run install.ps1 or orch-token"
+        Bad "$f still has __HAPY_* placeholders - run install.ps1 or orch-set-token / orch-set-gateway"
     }
     else {
         Ok ($f + ': token ' + (Mask-Token $j.env.ANTHROPIC_AUTH_TOKEN) + ', base ' + $j.env.ANTHROPIC_BASE_URL)

@@ -164,7 +164,7 @@ elseif ($NoToken -and $BaseUrl) {
 # ---------------------------------------------------------------- summary
 ''
 'installed:'
-"  scripts : $binDst  (claude-mode, hapy-ask, hapy-review, glm-task, orch-check, orch-status, orch-token, orch-update)"
+"  scripts : $binDst  (claude-mode, hapy-ask, hapy-review, glm-task, orch-check, orch-status, orch-set-token, orch-set-gateway, orch-update)"
 "  clone   : $src (recorded for orch-update -Apply)"
 "  profiles: $glmDst (gateway worker)"
 "            $workerDst (native worker)"
