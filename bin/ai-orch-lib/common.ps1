@@ -6,7 +6,7 @@
 
 # orchestrator version (bump on every released change; ai-orch update compares
 # this against the same line on GitHub)
-$script:OrchVersion = '1.7.2'
+$script:OrchVersion = '1.7.3'
 $script:OrchRepoRaw = 'https://raw.githubusercontent.com/S1mkin/ai-orchestrator/main/bin/ai-orch-lib/common.ps1'
 
 # pre-1.5 standalone commands: install.ps1 deletes them from ~/.claude/bin,
@@ -229,7 +229,7 @@ function Send-HapyMessage {
 
     $reader = New-Object IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8)
     $sb = New-Object Text.StringBuilder
-    $inTok = 0; $outTok = 0; $stop = ''
+    $inTok = 0; $outTok = 0; $stop = ''; $served = ''
     while (-not $reader.EndOfStream) {
         $line = $reader.ReadLine()
         if (-not $line.StartsWith('data:')) { continue }
@@ -237,7 +237,12 @@ function Send-HapyMessage {
         if ($data -eq '[DONE]') { break }
         try { $evt = $data | ConvertFrom-Json } catch { continue }
         switch ($evt.type) {
-            'message_start'      { if ($evt.message.usage) { $inTok = $evt.message.usage.input_tokens } }
+            'message_start'      {
+                # message.model is what the gateway says served the request -
+                # kept to catch a silent remap of the requested model
+                if ($evt.message.model) { $served = [string]$evt.message.model }
+                if ($evt.message.usage) { $inTok = $evt.message.usage.input_tokens }
+            }
             'content_block_delta' { if ($evt.delta.text) { [void]$sb.Append($evt.delta.text) } }
             'message_delta'      {
                 if ($evt.delta.stop_reason) { $stop = $evt.delta.stop_reason }
@@ -255,7 +260,14 @@ function Send-HapyMessage {
         # a cut answer looks complete to the reader - say it loudly
         Write-Warning "answer TRUNCATED at -MaxTokens $MaxTokens - re-run with a larger -MaxTokens"
     }
-    $usage = '(tokens as reported by the gateway, may be inaccurate: {0} in / {1} out, stop: {2})' -f $inTok, $outTok, ($(if ($stop) { $stop } else { '?' }))
+    if ($served -and $served -ne $Model) {
+        Write-Warning "gateway served '$served', not the requested '$Model' - it remaps models on its side"
+    }
+    $gwHost = $cfg.Base
+    try { $gwHost = ([Uri]$cfg.Base).Host } catch {}
+    $modelNote = if ($served -and $served -ne $Model) { "$Model (served: $served)" } else { $Model }
+    $usage = '(gateway {0}: {1}; tokens as reported by the gateway, may be inaccurate: {2} in / {3} out, stop: {4})' -f `
+        $gwHost, $modelNote, $inTok, $outTok, ($(if ($stop) { $stop } else { '?' }))
     return @{ Text = $sb.ToString(); Usage = $usage }
 }
 
