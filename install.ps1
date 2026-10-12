@@ -64,6 +64,13 @@ foreach ($old in $script:OrchLegacyScripts) {
     $p = Join-Path $binDst $old
     if (Test-Path $p) { Remove-Item $p -Force; "removed old command $p" }
 }
+# POSIX shim: Claude Code's Bash tool (Git Bash on Windows) cannot run .ps1,
+# so without it 'ai-orch' is "command not found" there and the model quietly
+# does the work itself. Written with LF whatever the clone's checkout did.
+$shim = Join-Path $binDst 'ai-orch'
+[IO.File]::WriteAllText($shim, (Get-Content (Join-Path $src 'bin/ai-orch') -Raw).Replace("`r`n", "`n"),
+    (New-Object Text.UTF8Encoding $false))
+if (-not $isWin) { & chmod +x $shim }
 New-Item -ItemType Directory -Force $claudeDir | Out-Null
 Copy-UnlessConfigured (Join-Path $src 'settings/settings.hapy.json') (Join-Path $claudeDir 'settings.hapy.json')
 Copy-UnlessConfigured (Join-Path $src 'settings/settings.claude.json') (Join-Path $claudeDir 'settings.claude.json')
@@ -94,6 +101,34 @@ $live = Join-Path $claudeDir 'settings.json'
 if (-not (Test-Path $live)) {
     Copy-Item (Join-Path $src 'settings/settings.hapy.json') $live -Force
     "seeded ~/.claude/settings.json from the hapy variant (ai-orch mode switches it later)"
+}
+# read gate: PreToolUse hook of the MAIN session that turns the first whole
+# Read of a long file into 'ai-orch ask'. Registered in both variants AND the
+# live file - ai-orch mode copies a variant over the live one, so a hook kept
+# only in settings.json would vanish on the next switch. Only our own entry
+# (recognised by read-gate.ps1) is added or refreshed; other hooks stay.
+$psHost = if ($isWin) { 'powershell -NoProfile -ExecutionPolicy Bypass' } else { 'pwsh -NoProfile' }
+$gateCmd = "$psHost -File `"$((Join-Path $libDst 'read-gate.ps1').Replace('\', '/'))`""
+foreach ($f in @((Join-Path $claudeDir 'settings.hapy.json'), (Join-Path $claudeDir 'settings.claude.json'), $live)) {
+    if (-not (Test-Path $f)) { continue }
+    $j = Get-Content $f -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (-not $j) { $j = [pscustomobject]@{} }
+    if (-not $j.PSObject.Properties['hooks']) { $j | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) }
+    $pre = @()
+    if ($j.hooks.PSObject.Properties['PreToolUse']) { $pre = @($j.hooks.PreToolUse) }
+    $entry = $pre | Where-Object { @($_.hooks | Where-Object { $_.command -match 'read-gate\.ps1' }).Count } | Select-Object -First 1
+    if ($entry) {
+        $h = @($entry.hooks | Where-Object { $_.command -match 'read-gate\.ps1' })[0]
+        if ($entry.matcher -eq 'Read' -and $h.command -eq $gateCmd) { continue }
+        $entry.matcher = 'Read'
+        $h.command = $gateCmd
+    }
+    else {
+        $pre += [pscustomobject]@{ matcher = 'Read'; hooks = @([pscustomobject]@{ type = 'command'; command = $gateCmd; timeout = 15 }) }
+    }
+    $j.hooks | Add-Member -NotePropertyName PreToolUse -NotePropertyValue ([object[]]$pre) -Force
+    [IO.File]::WriteAllText($f, ($j | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
+    "read gate hook registered in $f"
 }
 $glmDst = Join-Path $HomeDir '.claude-glm'
 New-Item -ItemType Directory -Force $glmDst | Out-Null
@@ -252,6 +287,8 @@ elseif ($NoToken -and $BaseUrl) {
 ''
 'installed:'
 "  command : $binDst/ai-orch.ps1  (subcommands in $libDst)"
+"            $binDst/ai-orch  (shim for Git Bash / sh)"
+"  hook    : read gate (long whole-file Read -> ai-orch ask) in settings.json + both variants"
 "  clone   : $src (recorded for ai-orch update -Apply)"
 "  profiles: $glmDst (gateway worker)"
 "            $workerDst (native worker)"

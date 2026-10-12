@@ -6,7 +6,7 @@
 
 # orchestrator version (bump on every released change; ai-orch update compares
 # this against the same line on GitHub)
-$script:OrchVersion = '1.7.3'
+$script:OrchVersion = '1.8.0'
 $script:OrchRepoRaw = 'https://raw.githubusercontent.com/S1mkin/ai-orchestrator/main/bin/ai-orch-lib/common.ps1'
 
 # pre-1.5 standalone commands: install.ps1 deletes them from ~/.claude/bin,
@@ -229,9 +229,19 @@ function Send-HapyMessage {
 
     $reader = New-Object IO.StreamReader($resp.GetResponseStream(), [Text.Encoding]::UTF8)
     $sb = New-Object Text.StringBuilder
-    $inTok = 0; $outTok = 0; $stop = ''; $served = ''
+    $inTok = 0; $outTok = 0; $stop = ''; $served = ''; $thinkChars = 0
+    # reasoning models think silently for minutes (grok-4.7 on a 100 KB diff:
+    # ~14 min) - a heartbeat on stderr shows the call is alive, so a caller
+    # that gave up waiting and reads the partial output does not take it for
+    # an empty answer
+    $sw = [Diagnostics.Stopwatch]::StartNew(); $beatAt = 60
     while (-not $reader.EndOfStream) {
         $line = $reader.ReadLine()
+        if ($sw.Elapsed.TotalSeconds -ge $beatAt) {
+            $phase = if ($sb.Length) { "writing the answer ($($sb.Length) chars)" } else { "thinking ($thinkChars chars of reasoning so far)" }
+            [Console]::Error.WriteLine("  ... $Model on the gateway: $([int]$sw.Elapsed.TotalSeconds)s, $phase")
+            $beatAt += 60
+        }
         if (-not $line.StartsWith('data:')) { continue }
         $data = $line.Substring(5).Trim()
         if ($data -eq '[DONE]') { break }
@@ -243,7 +253,10 @@ function Send-HapyMessage {
                 if ($evt.message.model) { $served = [string]$evt.message.model }
                 if ($evt.message.usage) { $inTok = $evt.message.usage.input_tokens }
             }
-            'content_block_delta' { if ($evt.delta.text) { [void]$sb.Append($evt.delta.text) } }
+            'content_block_delta' {
+                if ($evt.delta.text) { [void]$sb.Append($evt.delta.text) }
+                elseif ($evt.delta.thinking) { $thinkChars += $evt.delta.thinking.Length }
+            }
             'message_delta'      {
                 if ($evt.delta.stop_reason) { $stop = $evt.delta.stop_reason }
                 if ($evt.usage) {
@@ -256,6 +269,15 @@ function Send-HapyMessage {
     }
     $reader.Close(); $resp.Close()
 
+    if (-not $sb.ToString().Trim()) {
+        # GLM honours max_tokens and may spend all of it on reasoning: the
+        # stream ends cleanly with no text at all - never pass that on as an
+        # answer
+        $why = if ($stop -eq 'max_tokens') {
+            "the whole -MaxTokens $MaxTokens budget went to reasoning ($thinkChars chars) - re-run with a larger -MaxTokens"
+        } else { "stop: $(if ($stop) { $stop } else { '?' }), reasoning $thinkChars chars - re-run, or use -Backend claude" }
+        Write-Error "EMPTY answer from the gateway ($Model, $([int]$sw.Elapsed.TotalSeconds)s): $why"
+    }
     if ($stop -eq 'max_tokens') {
         # a cut answer looks complete to the reader - say it loudly
         Write-Warning "answer TRUNCATED at -MaxTokens $MaxTokens - re-run with a larger -MaxTokens"

@@ -25,6 +25,11 @@
 #   ai-orch task ...               # scout/start workers
 #   ai-orch mode hapy|claude|status [-Project]
 $ErrorActionPreference = 'Stop'
+# called through the sh shim (Git Bash): emit UTF-8, not the OEM codepage,
+# or Russian worker answers arrive as mojibake
+if ($env:AI_ORCH_UTF8) {
+    try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false } catch { }
+}
 $lib = Join-Path $PSScriptRoot 'ai-orch-lib'
 . (Join-Path $lib 'common.ps1')
 

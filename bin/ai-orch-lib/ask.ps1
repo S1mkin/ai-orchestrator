@@ -18,7 +18,10 @@ param(
     [string]$Model = 'auto',
     [ValidateSet('auto', 'gateway', 'claude')]
     [string]$Backend = 'auto',
-    [int]$MaxTokens = 4000,      # gateway only; 2000 cut 40-line Russian digests
+    # gateway only; reasoning counts against it - on big material GLM can spend
+    # several thousand on thinking and return no text (2000 cut 40-line
+    # Russian digests); billing is per actual token, a high cap is free
+    [int]$MaxTokens = 16000,
     [int]$TimeoutSec = 300
 )
 . (Join-Path $PSScriptRoot 'common.ps1')

@@ -27,9 +27,16 @@ $lib = $PSScriptRoot
 $bin = Split-Path $lib -Parent
 if (Test-Path (Join-Path $bin 'ai-orch.ps1')) { Ok 'ai-orch.ps1' } else { Bad "missing: $(Join-Path $bin 'ai-orch.ps1')" }
 foreach ($s in @('common.ps1', 'ask.ps1', 'review.ps1', 'task.ps1', 'mode.ps1', 'check.ps1',
-                 'status.ps1', 'stats.ps1', 'set-token.ps1', 'set-gateway.ps1', 'update.ps1')) {
+                 'status.ps1', 'stats.ps1', 'set-token.ps1', 'set-gateway.ps1', 'update.ps1',
+                 'read-gate.ps1')) {
     if (Test-Path (Join-Path $lib $s)) { Ok "ai-orch-lib/$s" } else { Bad "missing: $(Join-Path $lib $s)" }
 }
+# Git Bash (Claude Code's Bash tool on Windows) cannot run .ps1: without the
+# shim 'ai-orch' is "command not found" there
+$shim = Join-Path $bin 'ai-orch'
+if (-not (Test-Path $shim)) { Bad "missing: $shim (shim for Git Bash / sh) - re-run install.ps1" }
+elseif ((Get-Content $shim -Raw) -match "`r") { Bad "$shim has CRLF line endings - its shebang breaks; re-run install.ps1" }
+else { Ok 'ai-orch shim for Git Bash / sh' }
 $legacy = @(Get-ChildItem $bin -File -ErrorAction SilentlyContinue |
     Where-Object { $script:OrchLegacyScripts -contains $_.Name })
 if ($legacy) { Bad "pre-1.5 commands left in ${bin}: $(@($legacy.Name) -join ', ') - re-run install.ps1, it removes them" }
@@ -81,6 +88,39 @@ if ((Test-Path $memF) -and ((Get-Content $memF -Raw -Encoding UTF8) -match 'ai-o
     Ok 'delegation rules: installed in ~/.claude/CLAUDE.md'
 }
 else { Info 'delegation rules: not in ~/.claude/CLAUDE.md (re-run install.ps1 so the main session starts delegating)' }
+# read gate: must be in the live file AND in both variants (ai-orch mode
+# copies a variant over the live one); then probe it for real - a hook that
+# fails to start silently lets every Read through
+$gateMissing = @(foreach ($f in @($liveF, $hapyF, (Join-Path $HOME '.claude/settings.claude.json'))) {
+    # a missing variant is reported elsewhere; a missing live file means no gate
+    if (-not (Test-Path $f)) { if ($f -eq $liveF) { Split-Path $f -Leaf } }
+    elseif (-not ((Get-Content $f -Raw -Encoding UTF8) -match 'read-gate\.ps1')) { Split-Path $f -Leaf }
+})
+if ($gateMissing) { Bad "read gate hook missing in: $($gateMissing -join ', ') - re-run install.ps1" }
+else {
+    $psExeGate = if ($isWin) { 'powershell' } else { 'pwsh' }
+    $big = Join-Path ([IO.Path]::GetTempPath()) 'ai-orch-gate-probe.txt'
+    [IO.File]::WriteAllLines($big, [string[]](1..400 | ForEach-Object { "line $_" }))
+    $probe = @{ tool_name = 'Read'; session_id = "check-$PID-$([DateTime]::Now.Ticks)"
+                tool_input = @{ file_path = $big } } | ConvertTo-Json -Compress
+    $codes = @()
+    # the probe tests the default threshold: a custom one (or 0 = off) set in
+    # this process' env must not turn it into a false FAIL
+    $prevEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    $prevGate = $env:AI_ORCH_READ_GATE_LINES; $env:AI_ORCH_READ_GATE_LINES = $null
+    try {
+        foreach ($i in 1, 2) {
+            $null = $probe | & $psExeGate -NoProfile -ExecutionPolicy Bypass -File (Join-Path $lib 'read-gate.ps1') 2>$null
+            $codes += $LASTEXITCODE
+        }
+    }
+    finally {
+        $ErrorActionPreference = $prevEap; $env:AI_ORCH_READ_GATE_LINES = $prevGate
+        Remove-Item $big -Force -ErrorAction SilentlyContinue
+    }
+    if ($codes[0] -eq 2 -and $codes[1] -eq 0) { Ok 'read gate: long whole-file Read is sent to ai-orch ask, a repeat passes' }
+    else { Bad "read gate probe misbehaved (exit codes $($codes -join '/'), expected 2/0)" }
+}
 
 # ---------------------------------------------------------------- worker profiles
 Write-Host 'worker profiles'
@@ -127,7 +167,7 @@ if ($Live) {
     if ($gwConfigured) {
         try {
             $r = Send-HapyMessage -Model 'glm-5.3-flash' -Prompt 'Answer with exactly: OK' -Material 'ping' `
-                -MaxTokens 100 -TimeoutSec 60
+                -MaxTokens 1000 -TimeoutSec 60   # reasoning counts: 100 left ~40% headroom
             Ok ('gateway answered: ' + $r.Text.Trim())
         }
         catch { Bad ('gateway request failed: ' + $_.Exception.Message) }

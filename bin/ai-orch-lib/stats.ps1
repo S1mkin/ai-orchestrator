@@ -133,19 +133,21 @@ $period = if ($All) { 'all time' } else { "last $Days days (since $($since.ToStr
 if (-not $items) { ''; 'no model usage found for this period'; return }
 
 $totOut = ($items | Measure-Object Out -Sum).Sum
-$totAll = ($items | ForEach-Object { $_.In + $_.CacheRd + $_.CacheWr + $_.Out } | Measure-Object -Sum).Sum
+# input side = everything the models read: fresh prompt + cache reads/writes
+$totIn = ($items | ForEach-Object { $_.In + $_.CacheRd + $_.CacheWr } | Measure-Object -Sum).Sum
+$totReq = ($items | Measure-Object Req -Sum).Sum
 $routeName = @{ anthropic = 'Anthropic (Claude)'; gateway = 'hapy gateway' }
 
 ''
 'where the work went'
-'  {0,-20} {1,9} {2,9} {3,10} {4,10} {5,9} {6,9} {7,9}' -f 'route', 'requests', 'input', 'cache rd', 'cache wr', 'output', 'out %', 'all %'
+'  {0,-20} {1,9} {2,9} {3,10} {4,10} {5,9} {6,7} {7,7} {8,7}' -f 'route', 'requests', 'input', 'cache rd', 'cache wr', 'output', 'req %', 'in %', 'out %'
 foreach ($g in @($items | Group-Object Route | Sort-Object Name)) {
     $s = @{}
     foreach ($c in 'Req', 'In', 'CacheRd', 'CacheWr', 'Out') { $s[$c] = [long](($g.Group | Measure-Object $c -Sum).Sum) }
-    $sumAll = $s.In + $s.CacheRd + $s.CacheWr + $s.Out
-    '  {0,-20} {1,9} {2,9} {3,10} {4,10} {5,9} {6,9} {7,9}' -f $routeName[$g.Name], $s.Req,
+    $sumIn = $s.In + $s.CacheRd + $s.CacheWr
+    '  {0,-20} {1,9} {2,9} {3,10} {4,10} {5,9} {6,7} {7,7} {8,7}' -f $routeName[$g.Name], $s.Req,
         (Format-AINum $s.In), (Format-AINum $s.CacheRd), (Format-AINum $s.CacheWr), (Format-AINum $s.Out),
-        (Format-AIPct $s.Out $totOut), (Format-AIPct $sumAll $totAll)
+        (Format-AIPct $s.Req $totReq), (Format-AIPct $sumIn $totIn), (Format-AIPct $s.Out $totOut)
 }
 
 ''
@@ -159,6 +161,7 @@ foreach ($a in @($items | Sort-Object @{ e = { $order[$_.Source] } }, @{ e = { $
 }
 ''
 'input = fresh prompt tokens, cache rd/wr = prompt cache reads/writes (reads are'
-'the cheap re-sent context), output = generated tokens. out % compares generated'
-'work, all % everything processed. Gateway ask/review counts come from the'
+'the cheap re-sent context), output = generated tokens. Route shares: req % of'
+'requests, in % of everything the models read (input + cache rd + cache wr),'
+'out % of generated tokens. Gateway ask/review counts come from the'
 'gateway and are approximate.'

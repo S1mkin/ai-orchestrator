@@ -1,0 +1,24 @@
+#!/bin/sh
+# ai-orch - POSIX shim for shells that cannot run .ps1 directly (Git Bash,
+# which Claude Code uses for its Bash tool on Windows; sh/zsh on macOS/Linux).
+# Hands every argument and the exit code through to ai-orch.ps1 next to it.
+# LF line endings only (.gitattributes): a CR after 'sh' breaks the shebang.
+dir=$(dirname "$0")
+if command -v cygpath >/dev/null 2>&1; then
+    # Windows PowerShell writes the OEM codepage (866 for Russian) into a
+    # pipe, Git Bash reads UTF-8: ai-orch.ps1 switches to UTF-8 on this flag
+    export AI_ORCH_UTF8=1
+    # MSYS rewrites any path-LIKE argument for a native exe, task text such
+    # as "fix /api/users" included; switch that off and convert only the
+    # arguments that really are existing files or folders
+    export MSYS_NO_PATHCONV=1
+    n=$#
+    while [ "$n" -gt 0 ]; do
+        a=$1; shift
+        if [ -e "$a" ]; then a=$(cygpath -w -- "$a"); fi
+        set -- "$@" "$a"
+        n=$((n - 1))
+    done
+    exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(cygpath -w "$dir/ai-orch.ps1")" "$@"
+fi
+exec pwsh -NoProfile -File "$dir/ai-orch.ps1" "$@"
