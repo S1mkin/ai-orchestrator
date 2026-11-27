@@ -80,14 +80,28 @@ Copy-UnlessConfigured (Join-Path $src 'settings/settings.claude.json') (Join-Pat
 # are added only when missing - a hand-picked mapping is never overwritten.
 # The model picker follows the opposite rule - it is the repo's, not the
 # user's: the gateway has no machine-readable model list, so a new model
-# reaches the picker only through the template. The whole modelPicker is
-# taken from it (a list edited by hand does not survive an update); env with
-# the token is not touched. ai-orch mode hapy carries it to the live file.
+# reaches the picker only through the template. Every file that runs through
+# this gateway takes the whole modelPicker from it (a list edited by hand
+# does not survive an update): the hapy variant, and the live settings.json
+# while it points at the same gateway. Env with the token is not touched.
+$tplPicker = (Get-Content (Join-Path $src 'settings/settings.hapy.json') -Raw -Encoding UTF8 | ConvertFrom-Json).modelPicker
+# returns $true when the object was changed. Guards: an EMPTY file parses to
+# nothing (no object to sync into), a template without modelPicker has
+# nothing to deliver - null is never written. Invalid JSON is another case:
+# ConvertFrom-Json has already stopped the installer, the file stays as is.
+function Set-ModelPickerFromTemplate($j) {
+    if (-not $j -or -not $tplPicker) { return $false }
+    if (($j.modelPicker | ConvertTo-Json -Depth 10) -ceq ($tplPicker | ConvertTo-Json -Depth 10)) { return $false }
+    $j | Add-Member -NotePropertyName modelPicker -NotePropertyValue $tplPicker -Force
+    return $true
+}
 $hapyVariant = Join-Path $claudeDir 'settings.hapy.json'
+$aliasAdded = $false
+$pickerReplaced = $false
+$gwUrl = ''
 if (Test-Path $hapyVariant) {
     $hj = Get-Content $hapyVariant -Raw -Encoding UTF8 | ConvertFrom-Json
     $aliases = @{ ANTHROPIC_DEFAULT_SONNET_MODEL = 'glm-5.3'; ANTHROPIC_DEFAULT_OPUS_MODEL = 'grok-4.7' }
-    $aliasAdded = $false
     if ($hj.env) {
         foreach ($k in $aliases.Keys) {
             if (-not $hj.env.PSObject.Properties[$k]) {
@@ -95,22 +109,13 @@ if (Test-Path $hapyVariant) {
                 $aliasAdded = $true
             }
         }
+        $gwUrl = [string]$hj.env.ANTHROPIC_BASE_URL
     }
-    $tplPicker = (Get-Content (Join-Path $src 'settings/settings.hapy.json') -Raw -Encoding UTF8 | ConvertFrom-Json).modelPicker
-    $pickerReplaced = $false
-    # Guards: an EMPTY variant file parses to nothing (no object to sync
-    # into), a template without modelPicker has nothing to deliver - null is
-    # never written. Invalid JSON is another case: ConvertFrom-Json above has
-    # already stopped the installer, and the file stays as it was.
-    if ($hj -and $tplPicker -and (($hj.modelPicker | ConvertTo-Json -Depth 10) -cne ($tplPicker | ConvertTo-Json -Depth 10))) {
-        $hj | Add-Member -NotePropertyName modelPicker -NotePropertyValue $tplPicker -Force
-        $pickerReplaced = $true
-    }
+    $pickerReplaced = Set-ModelPickerFromTemplate $hj
     if ($aliasAdded -or $pickerReplaced) {
         [IO.File]::WriteAllText($hapyVariant, ($hj | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
         if ($aliasAdded) { "added model alias remaps (sonnet -> glm-5.3, opus -> grok-4.7) to $hapyVariant" }
         if ($pickerReplaced) { "model picker in $hapyVariant replaced with the repo's ($(@($tplPicker.options).Count) models)" }
-        "run 'ai-orch mode hapy' to refresh the live settings.json, then reload the VS Code window"
     }
 }
 $live = Join-Path $claudeDir 'settings.json'
@@ -118,6 +123,54 @@ if (-not (Test-Path $live)) {
     Copy-Item (Join-Path $src 'settings/settings.hapy.json') $live -Force
     "seeded ~/.claude/settings.json from the hapy variant (ai-orch mode switches it later)"
 }
+# same gateway? Only cosmetic differences are forgiven: the case of scheme
+# and host, a default port written out explicitly, a trailing slash - a live
+# file that differs from the variant just that way is still the variant in
+# effect (hand-edited once). Everything else must be identical, the case of
+# the path included: paths are case-sensitive, /API and /api may be two
+# different gateways. No query or credentials are dropped from the compare
+function Test-SameGateway([string]$a, [string]$b) {
+    if (-not $a -or -not $b) { return $false }
+    $ua = $null; $ub = $null
+    if ([Uri]::TryCreate($a.Trim(), [UriKind]::Absolute, [ref]$ua) -and [Uri]::TryCreate($b.Trim(), [UriKind]::Absolute, [ref]$ub)) {
+        return (($ua.Scheme -eq $ub.Scheme) -and ($ua.Host -eq $ub.Host) -and ($ua.Port -eq $ub.Port) -and
+            ($ua.AbsolutePath.TrimEnd('/') -ceq $ub.AbsolutePath.TrimEnd('/')) -and
+            ($ua.Query -ceq $ub.Query) -and ($ua.UserInfo -ceq $ub.UserInfo))
+    }
+    # not an absolute URL: only surrounding blanks and the trailing slash are forgiven
+    return ($a.Trim().TrimEnd('/') -ceq $b.Trim().TrimEnd('/'))
+}
+# the live file gets the new list in place while it points at the same
+# gateway as the variant: 'ai-orch update -Apply' plus a window reload is
+# enough, and everything else the user keeps there (the chosen model etc.)
+# stays - the file is re-serialized the way the read gate step below
+# re-serializes it on every run anyway. A configured gateway only: the
+# template's placeholder would match nothing. In claude mode, or on another
+# gateway, the file is not touched - and when the variant has just received
+# a new list, the installer says why the live one did not. An empty live
+# file parses to nothing; invalid JSON stops the installer here with its own
+# error, as the read gate step would a few lines later.
+if ($gwUrl -and ($gwUrl -notmatch '__HAPY_') -and (Test-Path $live)) {
+    $lj = Get-Content $live -Raw -Encoding UTF8 | ConvertFrom-Json
+    $liveUrl = ''
+    if ($lj -and $lj.env) { $liveUrl = [string]$lj.env.ANTHROPIC_BASE_URL }
+    # same gateway: bring the list up to date (nothing printed when it
+    # already is). Another one, or claude mode: not ours to touch
+    if ($lj -and (Test-SameGateway $liveUrl $gwUrl)) {
+        if (Set-ModelPickerFromTemplate $lj) {
+            [IO.File]::WriteAllText($live, ($lj | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
+            "model picker in $live replaced with the repo's ($(@($tplPicker.options).Count) models)"
+            "reload the VS Code window to see it"
+        }
+    }
+    elseif ($pickerReplaced -and $lj) {
+        if (-not $liveUrl) {
+            "live settings.json is in claude mode now: the new model list arrives with the next 'ai-orch mode hapy'"
+        }
+        else { "live settings.json points at another gateway than the hapy variant: its model picker is left alone" }
+    }
+}
+if ($aliasAdded) { "run 'ai-orch mode hapy' to refresh the live settings.json, then reload the VS Code window" }
 # read gate: PreToolUse hook of the MAIN session that turns the first whole
 # Read of a long file into 'ai-orch ask'. Registered in both variants AND the
 # live file - ai-orch mode copies a variant over the live one, so a hook kept
