@@ -78,6 +78,11 @@ Copy-UnlessConfigured (Join-Path $src 'settings/settings.claude.json') (Join-Pat
 # too (Copy-UnlessConfigured keeps it as-is): without them, subagents that
 # ask for sonnet/opus send Claude model names to the gateway and fail. Keys
 # are added only when missing - a hand-picked mapping is never overwritten.
+# The model picker follows the opposite rule - it is the repo's, not the
+# user's: the gateway has no machine-readable model list, so a new model
+# reaches the picker only through the template. The whole modelPicker is
+# taken from it (a list edited by hand does not survive an update); env with
+# the token is not touched. ai-orch mode hapy carries it to the live file.
 $hapyVariant = Join-Path $claudeDir 'settings.hapy.json'
 if (Test-Path $hapyVariant) {
     $hj = Get-Content $hapyVariant -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -91,9 +96,20 @@ if (Test-Path $hapyVariant) {
             }
         }
     }
-    if ($aliasAdded) {
+    $tplPicker = (Get-Content (Join-Path $src 'settings/settings.hapy.json') -Raw -Encoding UTF8 | ConvertFrom-Json).modelPicker
+    $pickerReplaced = $false
+    # Guards: an EMPTY variant file parses to nothing (no object to sync
+    # into), a template without modelPicker has nothing to deliver - null is
+    # never written. Invalid JSON is another case: ConvertFrom-Json above has
+    # already stopped the installer, and the file stays as it was.
+    if ($hj -and $tplPicker -and (($hj.modelPicker | ConvertTo-Json -Depth 10) -cne ($tplPicker | ConvertTo-Json -Depth 10))) {
+        $hj | Add-Member -NotePropertyName modelPicker -NotePropertyValue $tplPicker -Force
+        $pickerReplaced = $true
+    }
+    if ($aliasAdded -or $pickerReplaced) {
         [IO.File]::WriteAllText($hapyVariant, ($hj | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))
-        "added model alias remaps (sonnet -> glm-5.3, opus -> grok-4.7) to $hapyVariant"
+        if ($aliasAdded) { "added model alias remaps (sonnet -> glm-5.3, opus -> grok-4.7) to $hapyVariant" }
+        if ($pickerReplaced) { "model picker in $hapyVariant replaced with the repo's ($(@($tplPicker.options).Count) models)" }
         "run 'ai-orch mode hapy' to refresh the live settings.json, then reload the VS Code window"
     }
 }
